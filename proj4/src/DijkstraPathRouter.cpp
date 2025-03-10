@@ -67,7 +67,8 @@ bool CDijkstraPathRouter::Precompute(std::chrono::steady_clock::time_point deadl
 double CDijkstraPathRouter::FindShortestPath(TVertexID src, TVertexID dest, std::vector<TVertexID> &path) noexcept {
     if (DImplementation->vertices.find(src) == DImplementation->vertices.end() ||
         DImplementation->vertices.find(dest) == DImplementation->vertices.end()) {
-        return SImplementation::NoPathExists; // Invalid source or destination
+        path.clear(); // Clear the path vector
+        return NoPathExists; // Invalid source or destination
     }
 
     // Priority queue to store vertices and their distances
@@ -77,7 +78,7 @@ double CDijkstraPathRouter::FindShortestPath(TVertexID src, TVertexID dest, std:
     // Map to store distances from src to each vertex
     std::unordered_map<TVertexID, double> distances;
     for (const auto &vertex : DImplementation->vertices) {
-        distances[vertex.first] = std::numeric_limits<double>::infinity();
+        distances[vertex.first] = NoPathExists; // Use NoPathExists instead of infinity
     }
     distances[src] = 0.0;
 
@@ -108,11 +109,13 @@ double CDijkstraPathRouter::FindShortestPath(TVertexID src, TVertexID dest, std:
         }
     }
 
-    if (distances[dest] == std::numeric_limits<double>::infinity()) {
-        return SImplementation::NoPathExists; // No path exists
+    if (distances[dest] == NoPathExists) { // Use NoPathExists instead of infinity
+        path.clear(); // Clear the path vector if no path exists
+        return NoPathExists; // No path exists
     }
 
     // Reconstruct the path
+    path.clear(); // Clear the path vector before reconstructing
     for (TVertexID at = dest; at != src; at = previous[at]) {
         path.push_back(at);
     }
