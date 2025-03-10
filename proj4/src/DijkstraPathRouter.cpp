@@ -1,186 +1,117 @@
-#include "DijkstraPathRouter.h"
-#include <memory>
-#include <string>
-#include <unordered_map>
-#include <vector>
 #include <iostream>
+#include <vector>
+#include <unordered_map>
+#include <unordered_set>
 #include <queue>
-#include <algorithm>
 #include <limits>
+#include <any>
 
-struct CDijkstraPathRouter::SImplementation{
-    struct IndVertex{
-        TVertexID ThisVertexID;
-        std::any ThisVertexTag;
-        std::vector< TVertexID > ConnectedIDs;
-        std::unordered_map<TVertexID,double> MapOfWeights;
+// Placeholder for TVertexID and other types that may need to be defined in your project
+using TVertexID = int;
+using TEdgeWeight = double;
 
-        ~IndVertex(){};
-        TVertexID GetVertexID(){
-            return ThisVertexID;
+// Structure to store an edge (destination vertex, weight)
+struct Edge {
+    TVertexID dest;
+    TEdgeWeight weight;
+};
+
+// Class to implement Dijkstra's Algorithm for shortest path routing
+class CDijkstraPathRouter {
+public:
+    // Constructor
+    CDijkstraPathRouter() {
+        // Initialization if needed
+    }
+
+    // Destructor
+    ~CDijkstraPathRouter() {
+        // Cleanup if necessary
+    }
+
+    // Function to add a vertex
+    TVertexID AddVertex(std::any tag) noexcept {
+        TVertexID id = vertices.size(); // Assign a new ID based on current size
+        vertices.push_back(tag);
+        adjacencyList.emplace(id, std::vector<Edge>());
+        return id;
+    }
+
+    // Function to get a vertex tag by ID
+    std::any GetVertexTag(TVertexID id) const noexcept {
+        if (id < vertices.size()) {
+            return vertices[id];
+        }
+        return std::any(); // Return empty if ID is invalid
+    }
+
+    // Function to add an edge between two vertices with a weight
+    bool AddEdge(TVertexID src, TVertexID dest, TEdgeWeight weight, bool bidir = false) noexcept {
+        if (src >= vertices.size() || dest >= vertices.size() || weight < 0) {
+            return false; // Invalid edge
         }
 
-        std::any GetThisVertexTag(){
-            return ThisVertexTag;
+        adjacencyList[src].push_back(Edge{dest, weight});
+        if (bidir) {
+            adjacencyList[dest].push_back(Edge{src, weight});
         }
-
-        std::size_t ConnectedIDCount(){
-            return ConnectedIDs.size();
-        }
-        
-        std::vector< TVertexID > GetConnectedVertexIDs(){
-            return ConnectedIDs;
-        }
-
-        double GetWeight(TVertexID &id){
-            auto Search = MapOfWeights.find(id);
-
-            if(Search == MapOfWeights.end()){
-                return std::numeric_limits<double>::infinity(); // Return infinity instead of false
-            }
-            return Search->second;
-        }
-    };
-
-    std::vector< std::shared_ptr< IndVertex > > AllVertices;
-    size_t IndexKeeper = 0; // Initialize to 0 instead of -1 since size_t is unsigned
-    
-    SImplementation(){};
-
-    std::size_t VertexCount() const{
-        return AllVertices.size();
-    };
-
-    TVertexID AddVertex(std::any tag){
-        auto NewVertex = std::make_shared<IndVertex>();
-        NewVertex->ThisVertexID = IndexKeeper;
-        NewVertex->ThisVertexTag = tag;
-        AllVertices.push_back(NewVertex);
-        return IndexKeeper++;
-    };
-    
-    std::any GetVertexTag(TVertexID id) const{
-        return AllVertices[id]->GetThisVertexTag();
-    };
-    
-    bool AddEdge(TVertexID src, TVertexID dest, double weight, bool bidir = false) {
-        if (weight > 0)
-        {
-            AllVertices[src]->MapOfWeights[dest] = weight;
-            AllVertices[src]->ConnectedIDs.push_back(dest);
-            
-            if (bidir){
-                AllVertices[dest]->MapOfWeights[src] = weight;
-                AllVertices[dest]->ConnectedIDs.push_back(src);
-            }
-            return true;
-        }
-        return false;
-    };
-    
-    bool Precompute(std::chrono::steady_clock::time_point deadline) {
         return true;
-    };
+    }
 
-    double FindShortestPath(TVertexID src, TVertexID dest, std::vector<TVertexID> &path) {
-        // Clear the path vector first
-        path.clear();
-        
-        // Check if src and dest are valid vertices
-        if(src >= VertexCount() || dest >= VertexCount()) {
-            return NoPathExists;
+    // Function to find the shortest path from src to dest
+    double FindShortestPath(TVertexID src, TVertexID dest, std::vector<TVertexID>& path) noexcept {
+        // Dijkstra's Algorithm
+        std::unordered_map<TVertexID, double> dist;
+        std::unordered_map<TVertexID, TVertexID> prev;
+        std::priority_queue<std::pair<double, TVertexID>, 
+                            std::vector<std::pair<double, TVertexID>>, 
+                            std::greater<std::pair<double, TVertexID>>> pq;
+
+        // Initialize distances and priority queue
+        for (const auto& vertex : adjacencyList) {
+            dist[vertex.first] = std::numeric_limits<double>::infinity();
         }
-        
-        // Create a min-heap priority queue
-        // Pair of (distance, vertex)
-        typedef std::pair<double, TVertexID> DistVertex;
-        std::priority_queue<DistVertex, std::vector<DistVertex>, std::greater<DistVertex>> pq;
-        
-        // Create distance array and predecessor array
-        std::vector<double> distance(VertexCount(), std::numeric_limits<double>::infinity());
-        std::vector<TVertexID> predecessor(VertexCount(), std::numeric_limits<TVertexID>::max()); // Use max value instead of -1
-        
-        // Initialize source distance and add to queue
-        distance[src] = 0;
+        dist[src] = 0;
         pq.push({0, src});
-        
-        // Dijkstra's algorithm
-        while(!pq.empty()) {
-            double dist = pq.top().first;
+
+        // Main loop of Dijkstra's algorithm
+        while (!pq.empty()) {
             TVertexID u = pq.top().second;
             pq.pop();
-            
-            // Skip if we've found a better path already
-            if(dist > distance[u]) continue;
-            
-            // If we reached destination, break
-            if(u == dest) break;
-            
-            // Check all neighbors of u
-            for(TVertexID v : AllVertices[u]->GetConnectedVertexIDs()) {
-                double weight = AllVertices[u]->GetWeight(v);
-                
-                // Relaxation
-                if(distance[u] + weight < distance[v]) {
-                    distance[v] = distance[u] + weight;
-                    predecessor[v] = u;
-                    pq.push({distance[v], v});
+
+            if (u == dest) {
+                break; // Found the shortest path to destination
+            }
+
+            for (const auto& edge : adjacencyList[u]) {
+                TVertexID v = edge.dest;
+                double weight = edge.weight;
+                double alt = dist[u] + weight;
+                if (alt < dist[v]) {
+                    dist[v] = alt;
+                    prev[v] = u;
+                    pq.push({alt, v});
                 }
             }
         }
-        
-        // Check if path exists
-        if(distance[dest] == std::numeric_limits<double>::infinity()) {
-            return NoPathExists;
+
+        // Reconstruct the shortest path
+        path.clear();
+        TVertexID u = dest;
+        while (prev.find(u) != prev.end()) {
+            path.push_back(u);
+            u = prev[u];
         }
-        
-        // Reconstruct path
-        for(TVertexID at = dest; at != src; at = predecessor[at]) {
-            // Check for unreachable vertex (indicated by max value)
-            if(predecessor[at] == std::numeric_limits<TVertexID>::max()) {
-                path.clear(); // No path exists
-                return NoPathExists;
-            }
-            path.push_back(at);
-        }
-        
-        // Add the source vertex
-        path.push_back(src);
-        
-        // Reverse to get path from src to dest
-        std::reverse(path.begin(), path.end());
-        
-        return distance[dest];
-    };
-};
+        std::reverse(path.begin(), path.end()); // Reverse to get correct order
+        return dist[dest];
+    }
 
-//---------------------------------------------
-CDijkstraPathRouter::CDijkstraPathRouter(){
-    DImplementation = std::make_unique<SImplementation>();
-};
+    // Function to get the number of vertices
+    std::size_t VertexCount() const noexcept {
+        return vertices.size();
+    }
 
-CDijkstraPathRouter::~CDijkstraPathRouter(){};
-
-std::size_t CDijkstraPathRouter::VertexCount() const noexcept{
-    return DImplementation->VertexCount();
-};
-
-CPathRouter::TVertexID CDijkstraPathRouter::AddVertex(std::any tag) noexcept{
-    return DImplementation->AddVertex(tag);
-};
-
-std::any CDijkstraPathRouter::GetVertexTag(TVertexID id) const noexcept{
-    return DImplementation->GetVertexTag(id);
-};
-
-bool CDijkstraPathRouter::AddEdge(TVertexID src, TVertexID dest, double weight, bool bidir) noexcept{
-    return DImplementation->AddEdge(src, dest, weight, bidir);
-};
-
-bool CDijkstraPathRouter::Precompute(std::chrono::steady_clock::time_point deadline) noexcept{
-    return DImplementation->Precompute(deadline);
-};
-
-double CDijkstraPathRouter::FindShortestPath(TVertexID src, TVertexID dest, std::vector<TVertexID> &path) noexcept{
-    return DImplementation->FindShortestPath(src, dest, path);
+private:
+    std::vector<std::any> vertices; // Stores vertex tags (could be coordinates, names, etc.)
+    std::unordered_map<TVertexID, std::vector<Edge>> adjacencyList; // Adjacency list to store edges
 };
