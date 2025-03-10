@@ -4,7 +4,7 @@
 #include <any>
 #include <limits>
 #include <queue>
-#include <chrono>
+#include <algorithm> // Add this line to include the algorithm header
 
 // Define the SImplementation struct to hold all private members
 struct CDijkstraPathRouter::SImplementation {
@@ -117,7 +117,7 @@ double CDijkstraPathRouter::FindShortestPath(TVertexID src, TVertexID dest, std:
         path.push_back(at);
     }
     path.push_back(src);
-    std::reverse(path.begin(), path.end());
+    std::reverse(path.begin(), path.end()); // Reverse the path to get the correct order
 
     return distances[dest];
 }
