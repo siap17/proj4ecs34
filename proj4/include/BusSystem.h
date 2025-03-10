@@ -1,5 +1,5 @@
-#ifndef BUSSYSTEM_H
-#define BUSSYSTEM_H
+#ifndef BUSROUTE_H
+#define BUSROUTE_H
 
 #include "StreetMap.h"
 
