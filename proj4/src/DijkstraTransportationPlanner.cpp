@@ -5,8 +5,8 @@
 #include <algorithm>
 #include <cmath>
 #include <iostream>
-#include <queue>    // Added for std::priority_queue
-#include <sstream>  // Added for std::stringstream
+#include <queue>
+#include <sstream>
 #include "StreetMap.h"
 #include "BusSystem.h"
 #include "PathRouter.h"
@@ -16,7 +16,7 @@
 #include "BusSystemIndexer.h"
 #include "DijkstraTransportationPlanner.h"
 
-struct CDijkstraTransportationPlanner::SImplementation{
+struct CDijkstraTransportationPlanner::SImplementation {
     
     using TVertexID = std::size_t; 
     static constexpr double NoPath = std::numeric_limits<double>::infinity(); 
@@ -92,7 +92,6 @@ struct CDijkstraTransportationPlanner::SImplementation{
 
                 double distance = CalculateDistance(node1, node2); 
 
-                // Use IsOneWay consistently
                 bool oneWay = IsOneWay(way); 
                 AddEdge(v1, v2, distance); 
                 if (!oneWay){
@@ -145,14 +144,14 @@ struct CDijkstraTransportationPlanner::SImplementation{
     }
 
     double CalculateDistance(const std::shared_ptr<CStreetMap::SNode>& node1, 
-                         const std::shared_ptr<CStreetMap::SNode>& node2) const {
-    // Use GeographicUtils for Haversine distance
-    double distanceInMiles = SGeographicUtils::HaversineDistanceInMiles(node1->Location(), node2->Location());
-    
-    // Convert miles to meters (1 mile = 1609.344 meters)
-    const double MetersPerMile = 1609.344;
-    return distanceInMiles * MetersPerMile;
-}
+                             const std::shared_ptr<CStreetMap::SNode>& node2) const {
+        // Use GeographicUtils for Haversine distance
+        double distanceInMiles = SGeographicUtils::HaversineDistanceInMiles(node1->Location(), node2->Location());
+        
+        // Convert miles to meters (1 mile = 1609.344 meters)
+        const double MetersPerMile = 1609.344;
+        return distanceInMiles * MetersPerMile;
+    }
 
     std::size_t NodeCount() const noexcept {
         return SortedNode.size();
@@ -166,7 +165,13 @@ struct CDijkstraTransportationPlanner::SImplementation{
     }
 
     double FindShortestPath(TNodeID src, TNodeID dest, std::vector<TNodeID>& path) {
-        path.clear(); 
+        path.clear();
+        
+        // Special case: if src and dest are the same
+        if (src == dest) {
+            path.push_back(src);
+            return 0.0;
+        }
 
         // Check if src and dest nodes exist in our mapping
         if (nodeToVertex.find(src) == nodeToVertex.end() || 
@@ -224,7 +229,7 @@ struct CDijkstraTransportationPlanner::SImplementation{
         }
 
         // Check if we found a path
-        if (distances[destVertex] == NoPath) {
+        if (distances[destVertex] == NoPath || previous.find(destVertex) == previous.end()) {
             return NoPath;
         }
 
@@ -246,188 +251,210 @@ struct CDijkstraTransportationPlanner::SImplementation{
         return distances[destVertex];
     }
 
+    // Helper function to find the closest bus stop to a node
+    TNodeID FindClosestBusStop(TNodeID nodeID, std::shared_ptr<CBusSystem> busSystem) const {
+        auto node = GetNodeByID(nodeID);
+        if (!node || !busSystem) {
+            return 0;
+        }
+        
+        double minDistance = std::numeric_limits<double>::max();
+        TNodeID closestStopNodeID = 0;
+        
+        for (size_t i = 0; i < busSystem->StopCount(); i++) {
+            auto stop = busSystem->StopByIndex(i);
+            if (!stop) continue;
+            
+            auto stopNode = GetNodeByID(stop->NodeID());
+            if (!stopNode) continue;
+            
+            double distance = CalculateDistance(node, stopNode);
+            if (distance < minDistance) {
+                minDistance = distance;
+                closestStopNodeID = stop->NodeID();
+            }
+        }
+        
+        return closestStopNodeID;
+    }
+
     double FindFastestPath(TNodeID src, TNodeID dest, std::vector<TTripStep>& path) {
-    path.clear();
+        path.clear();
+        
+        // Special case: if src and dest are the same
+        if (src == dest) {
+            path.push_back({ETransportationMode::Walk, src});
+            return 0.0;
+        }
 
-    // Check if src and dest nodes exist in our mapping
-    if (nodeToVertex.find(src) == nodeToVertex.end() || 
-        nodeToVertex.find(dest) == nodeToVertex.end()){
-        return NoPath; 
-    }
+        // Check if src and dest nodes exist in our mapping
+        if (nodeToVertex.find(src) == nodeToVertex.end() || 
+            nodeToVertex.find(dest) == nodeToVertex.end()){
+            return NoPath; 
+        }
 
-    // Get the bus system if available
-    auto busSystem = configuration->BusSystem();
-    bool hasBusSystem = busSystem != nullptr;
-    
-    // Create a specialized graph for time-based routing
-    struct EdgeInfo {
-        TNodeID toNode;
-        double time;
-        ETransportationMode mode;
-    };
-    
-    std::unordered_map<TNodeID, std::vector<EdgeInfo>> timeGraph;
-    
-    // Build walking edges from street map
-    for (size_t i = 0; i < Map->WayCount(); ++i) {
-        auto way = Map->WayByIndex(i);
-        if (!way || !IsWayTraversable(way)) {
-            continue;
+        // First, calculate walking time
+        std::vector<TNodeID> walkPath;
+        double walkDistance = FindShortestPath(src, dest, walkPath);
+        double walkTime = (walkDistance == NoPath) ? NoPath : walkDistance / configuration->WalkSpeed();
+        
+        // Walking-only path to use as fallback
+        std::vector<TTripStep> walkOnlyPath;
+        if (walkDistance != NoPath) {
+            for (TNodeID node : walkPath) {
+                walkOnlyPath.push_back({ETransportationMode::Walk, node});
+            }
         }
         
-        for (size_t j = 0; j < way->NodeCount() - 1; ++j) {
-            TNodeID node1ID = way->GetNodeID(j);
-            TNodeID node2ID = way->GetNodeID(j+1);
-            
-            auto node1 = GetNodeByID(node1ID);
-            auto node2 = GetNodeByID(node2ID);
-            
-            if (!node1 || !node2) {
-                continue;
-            }
-            
-            // Calculate distance and times
-            double distance = CalculateDistance(node1, node2);
-            double walkTime = distance / configuration->WalkSpeed();
-            double bikeTime = distance / configuration->BikeSpeed();
-            
-            // Add edges to time graph
-            bool oneWay = IsOneWay(way);
-            
-            // Walking edges
-            timeGraph[node1ID].push_back({node2ID, walkTime, ETransportationMode::Walk});
-            if (!oneWay) {
-                timeGraph[node2ID].push_back({node1ID, walkTime, ETransportationMode::Walk});
-            }
-            
-            // Biking edges
-            timeGraph[node1ID].push_back({node2ID, bikeTime, ETransportationMode::Bike});
-            if (!oneWay) {
-                timeGraph[node2ID].push_back({node1ID, bikeTime, ETransportationMode::Bike});
-            }
+        // Get bus system if available
+        auto busSystem = configuration->BusSystem();
+        if (!busSystem) {
+            // No bus system, just return walking path
+            path = walkOnlyPath;
+            return walkTime;
         }
-    }
-    
-    // Add bus edges if bus system is available
-    if (hasBusSystem) {
-        for (size_t i = 0; i < busSystem->RouteCount(); ++i) {
+        
+        // Try to find a bus route
+        // First, find closest bus stops to src and dest
+        TNodeID srcBusStopNodeID = FindClosestBusStop(src, busSystem);
+        TNodeID destBusStopNodeID = FindClosestBusStop(dest, busSystem);
+        
+        // If we couldn't find a bus stop near either src or dest, just walk
+        if (srcBusStopNodeID == 0 || destBusStopNodeID == 0) {
+            path = walkOnlyPath;
+            return walkTime;
+        }
+        
+        // Find path to and from bus stops
+        std::vector<TNodeID> pathToStop;
+        double distanceToStop = FindShortestPath(src, srcBusStopNodeID, pathToStop);
+        double timeToStop = (distanceToStop == NoPath) ? NoPath : distanceToStop / configuration->WalkSpeed();
+        
+        std::vector<TNodeID> pathFromStop;
+        double distanceFromStop = FindShortestPath(destBusStopNodeID, dest, pathFromStop);
+        double timeFromStop = (distanceFromStop == NoPath) ? NoPath : distanceFromStop / configuration->WalkSpeed();
+        
+        // If we can't walk to/from stops, use walking-only path
+        if (timeToStop == NoPath || timeFromStop == NoPath) {
+            path = walkOnlyPath;
+            return walkTime;
+        }
+        
+        // Find fastest bus route between stops
+        double fastestBusTime = NoPath;
+        std::vector<TTripStep> fastestBusPath;
+        
+        // Loop through all bus routes
+        for (size_t i = 0; i < busSystem->RouteCount(); i++) {
             auto route = busSystem->RouteByIndex(i);
-            if (!route || route->StopCount() < 2) {
-                continue;
+            if (!route) continue;
+            
+            // Find src and dest positions in the route
+            int srcPos = -1, destPos = -1;
+            
+            for (size_t j = 0; j < route->StopCount(); j++) {
+                auto stopID = route->GetStopID(j);
+                auto stop = busSystem->StopByID(stopID);
+                if (!stop) continue;
+                
+                if (stop->NodeID() == srcBusStopNodeID) {
+                    srcPos = j;
+                }
+                if (stop->NodeID() == destBusStopNodeID) {
+                    destPos = j;
+                }
             }
             
-            // For each consecutive pair of stops in the route
-            for (size_t j = 0; j < route->StopCount() - 1; ++j) {
-                auto stopID1 = route->GetStopID(j);
-                auto stopID2 = route->GetStopID(j + 1);
+            // If we found both stops and src comes before dest in the route
+            if (srcPos != -1 && destPos != -1 && srcPos < destPos) {
+                // Calculate bus time
+                double totalBusDistance = 0.0;
+                std::vector<TNodeID> busPart;
                 
-                auto stop1 = busSystem->StopByID(stopID1);
-                auto stop2 = busSystem->StopByID(stopID2);
-                
-                if (!stop1 || !stop2) {
-                    continue;
+                for (int j = srcPos; j <= destPos; j++) {
+                    auto stopID = route->GetStopID(j);
+                    auto stop = busSystem->StopByID(stopID);
+                    if (!stop) continue;
+                    
+                    busPart.push_back(stop->NodeID());
+                    
+                    if (j > srcPos) {
+                        auto prevStopID = route->GetStopID(j-1);
+                        auto prevStop = busSystem->StopByID(prevStopID);
+                        if (!prevStop) continue;
+                        
+                        auto prevNode = GetNodeByID(prevStop->NodeID());
+                        auto currNode = GetNodeByID(stop->NodeID());
+                        if (!prevNode || !currNode) continue;
+                        
+                        totalBusDistance += CalculateDistance(prevNode, currNode);
+                    }
                 }
                 
-                TNodeID nodeID1 = stop1->NodeID();
-                TNodeID nodeID2 = stop2->NodeID();
+                // Calculate bus time (in seconds)
+                // Assuming bus speed is 80% of default speed limit
+                double busSpeed = configuration->DefaultSpeedLimit() * 0.8 * 0.44704; // mph * 0.44704 = m/s
+                double busTimeNoStops = totalBusDistance / busSpeed;
                 
-                auto node1 = GetNodeByID(nodeID1);
-                auto node2 = GetNodeByID(nodeID2);
+                // Add stop time for each stop except the last one
+                double busTime = busTimeNoStops + (destPos - srcPos) * configuration->BusStopTime();
                 
-                if (!node1 || !node2) {
-                    continue;
+                // Calculate total time for this route
+                double totalTime = timeToStop + busTime + timeFromStop;
+                
+                // If this is faster than our best so far, update
+                if (totalTime < fastestBusTime) {
+                    fastestBusTime = totalTime;
+                    
+                    // Build the path
+                    fastestBusPath.clear();
+                    
+                    // Walk to first bus stop
+                    for (TNodeID node : pathToStop) {
+                        fastestBusPath.push_back({ETransportationMode::Walk, node});
+                    }
+                    
+                    // Bus ride (skip first to avoid duplicate)
+                    for (size_t j = 1; j < busPart.size(); j++) {
+                        fastestBusPath.push_back({ETransportationMode::Bus, busPart[j]});
+                    }
+                    
+                    // Walk from last bus stop to destination (skip first to avoid duplicate)
+                    for (size_t j = 1; j < pathFromStop.size(); j++) {
+                        fastestBusPath.push_back({ETransportationMode::Walk, pathFromStop[j]});
+                    }
                 }
-                
-                // Calculate bus travel time (with a stop time penalty)
-                double distance = CalculateDistance(node1, node2);
-                double busSpeed = configuration->DefaultSpeedLimit() * 0.8; // Assume buses are 80% of speed limit
-                double busTime = (distance / (busSpeed * 1609.344 / 3600.0)) + configuration->BusStopTime();
-                
-                // Add bus edge (one way in the route direction)
-                timeGraph[nodeID1].push_back({nodeID2, busTime, ETransportationMode::Bus});
             }
         }
-    }
-    
-    // Now run a modified Dijkstra on the time graph
-    std::priority_queue<std::pair<double, TNodeID>, std::vector<std::pair<double, TNodeID>>, std::greater<>> pq;
-    std::unordered_map<TNodeID, double> times;
-    std::unordered_map<TNodeID, std::pair<TNodeID, ETransportationMode>> previous;
-    
-    // Initialize all times to infinity
-    for (const auto& [nodeID, _] : timeGraph) {
-        times[nodeID] = NoPath;
-    }
-    times[src] = 0.0;
-    
-    // Start from source
-    pq.push({0.0, src});
-    
-    // Main Dijkstra loop
-    while (!pq.empty()) {
-        auto [currentTime, currentNode] = pq.top();
-        pq.pop();
         
-        // If we reached the destination, we're done
-        if (currentNode == dest) {
-            break;
+        // Compare bus route with walking-only route
+        if (walkTime != NoPath && (fastestBusTime == NoPath || walkTime <= fastestBusTime)) {
+            // Walking is faster
+            path = walkOnlyPath;
+            return walkTime;
+        } else if (fastestBusTime != NoPath) {
+            // Bus is faster
+            path = fastestBusPath;
+            return fastestBusTime;
         }
         
-        // Skip if we already found a better path
-        if (currentTime > times[currentNode]) {
-            continue;
-        }
-        
-        // Process neighbors
-        for (const auto& edge : timeGraph[currentNode]) {
-            double newTime = currentTime + edge.time;
-            
-            if (newTime < times[edge.toNode]) {
-                times[edge.toNode] = newTime;
-                previous[edge.toNode] = {currentNode, edge.mode};
-                pq.push({newTime, edge.toNode});
-            }
-        }
-    }
-    
-    // No path found
-    if (times[dest] == NoPath) {
+        // No path found
         return NoPath;
     }
-    
-    // Reconstruct the path
-    std::vector<std::pair<TNodeID, ETransportationMode>> reversePath;
-    TNodeID current = dest;
-    
-    while (current != src) {
-        auto [prevNode, mode] = previous[current];
-        reversePath.push_back({current, mode});
-        current = prevNode;
-    }
-    
-    // Add the source node (with an arbitrary mode, it will be overridden)
-    reversePath.push_back({src, ETransportationMode::Walk});
-    
-    // Reverse to get the correct order
-    std::reverse(reversePath.begin(), reversePath.end());
-    
-    // Normalize the path (the source should use the mode of the first step)
-    if (reversePath.size() >= 2) {
-        reversePath[0].second = reversePath[1].second;
-    }
-    
-    // Convert to TTripStep format
-    for (const auto& [nodeID, mode] : reversePath) {
-        path.push_back({mode, nodeID});
-    }
-    
-    return times[dest];
-}
+
     bool GetPathDescription(const std::vector<TTripStep>& path, std::vector<std::string>& desc) const {
         desc.clear();
 
-        if (path.size() < 2) {
-            return false; // Need at least start and end for a valid path
+        if (path.empty()) {
+            return false;
+        }
+        
+        // Special case for single-node path
+        if (path.size() == 1) {
+            std::stringstream ss;
+            ss << "Start and end at node " << path[0].second;
+            desc.push_back(ss.str());
+            return true;
         }
 
         // Start description
@@ -451,7 +478,7 @@ struct CDijkstraTransportationPlanner::SImplementation{
 
             double stepDistance = CalculateDistance(previous, current);
 
-            // Fixed function name and added proper null handling
+            // Find way between nodes
             std::shared_ptr<CStreetMap::SWay> way = FindWayBetweenNodes(prevNodeID, nodeID);
             std::string wayName = way ? GetWayName(way) : "unknown road";
 
@@ -473,7 +500,7 @@ struct CDijkstraTransportationPlanner::SImplementation{
             desc.push_back(stepSs.str());
         }
 
-        // Add arrival message - fixed to add space after "node"
+        // Add arrival message
         std::stringstream arrivalSs;
         arrivalSs << "Arrive at node " << path.back().second;
         desc.push_back(arrivalSs.str());
@@ -488,7 +515,6 @@ struct CDijkstraTransportationPlanner::SImplementation{
                 continue;
             }
             
-            // Fixed GetNodeID and renamed isOneWay to IsOneWay
             for (size_t j = 0; j < way->NodeCount() - 1; ++j) {
                 if ((way->GetNodeID(j) == node1 && way->GetNodeID(j+1) == node2) ||
                     (!IsOneWay(way) && way->GetNodeID(j) == node2 && way->GetNodeID(j+1) == node1)) {
@@ -500,7 +526,6 @@ struct CDijkstraTransportationPlanner::SImplementation{
         return nullptr;
     }
 
-    // Fixed FormatDistance function with proper spacing
     std::string FormatDistance(double meters) const {
         if (meters < 1000) {
             // Less than 1 km, show in meters
