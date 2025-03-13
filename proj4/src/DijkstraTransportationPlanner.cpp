@@ -289,9 +289,9 @@ struct CDijkstraTransportationPlanner::SImplementation{
             std::stringstream stepSs; 
             switch(mode){
                 case ETransportationMode::Walk: 
-                    stepSs << "Walk to node " << nodeID << " via " << wayName << " (" << FormatDistance(stepDistance) << ")";
+                    stepSs<<"Take bus to node " << nodeID << " via " << wayName << " (" << FormatDistance(stepDistance) << ")";
                     break; 
-                
+
                 case ETransportationMode::Bus: 
                     stepSs<<"Take bus to node " << nodeID << "via " << wayName <<  "(" << FormatDistance(stepDistance) << ")"; 
                     break; 
@@ -315,9 +315,10 @@ struct CDijkstraTransportationPlanner::SImplementation{
             }
 
             for (size_t j = 0; j < way ->NodeCount()-1; ++j){
-                if ((way ->GetNodeID(j) == node1 && way->GetNodeID(j+1) == node2) || (!isOneWay(way) && way ->GetNode(j) == node2 && way->GetNodeID(j+1) == node1)){
-                    return way; 
-                }
+                if ((way->GetNodeID(j) == node1 && way->GetNodeID(j+1) == node2) || 
+                    (!isOneWay(way) && way->GetNodeID(j) == node2 && way->GetNodeID(j+1) == node1)) {
+                return way; 
+            }
             }
         }
         return nullptr; 
@@ -332,7 +333,7 @@ struct CDijkstraTransportationPlanner::SImplementation{
             double km = meters/1000.0; 
             std::stringstream ss; 
             ss.precision(1); 
-            ss <<std::fixed <<km<< "kilometers"; 
+            ss << std::fixed << km << " kilometers";
             return ss.str(); 
         }
     }
