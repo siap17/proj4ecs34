@@ -146,23 +146,31 @@ struct CDijkstraTransportationPlanner::SImplementation{
 
     double CalculateDistance(const std::shared_ptr<CStreetMap::SNode>& node1, 
                             const std::shared_ptr<CStreetMap::SNode>& node2) const {
-        constexpr double EarthRadius = 6371000.0; 
-
-        // Fixed method names: Latitude() -> latitude(), Longitude() -> longitude()
-        double lat1 = node1->latitude() * M_PI / 180.0; 
-        double lat2 = node2->latitude() * M_PI / 180.0; 
-
-        double lon1 = node1->longitude() * M_PI / 180.0; 
-        double lon2 = node2->longitude() * M_PI / 180.0; 
-
-        double dlat = lat2 - lat1; 
-        double dlon = lon2 - lon1; 
-
-        double a = sin(dlat/2) * sin(dlat/2) + cos(lat1) * cos(lat2) * sin(dlon/2) * sin(dlon/2); 
-        double c = 2 * atan2(sqrt(a), sqrt(1-a)); 
-
-        return EarthRadius * c; 
+    // Use GeographicUtils if available
+    if (SGeographicUtils::DistanceHaversine) {
+        return SGeographicUtils::DistanceHaversine(
+            node1->GetLocation().first, node1->GetLocation().second,
+            node2->GetLocation().first, node2->GetLocation().second);
     }
+    
+    // Manual calculation using Haversine formula if GeographicUtils isn't available
+    constexpr double EarthRadius = 6371000.0; 
+    
+    // Get latitude and longitude from node location
+    double lat1 = node1->GetLocation().first * M_PI / 180.0;
+    double lat2 = node2->GetLocation().first * M_PI / 180.0;
+    
+    double lon1 = node1->GetLocation().second * M_PI / 180.0;
+    double lon2 = node2->GetLocation().second * M_PI / 180.0;
+    
+    double dlat = lat2 - lat1;
+    double dlon = lon2 - lon1;
+    
+    double a = sin(dlat/2) * sin(dlat/2) + cos(lat1) * cos(lat2) * sin(dlon/2) * sin(dlon/2);
+    double c = 2 * atan2(sqrt(a), sqrt(1-a));
+    
+    return EarthRadius * c;
+}
     
     std::size_t NodeCount() const noexcept {
         return SortedNode.size();
