@@ -283,13 +283,13 @@ struct CDijkstraTransportationPlanner::SImplementation{
 
             double stepDistance = CalculateDistance(previous, current); 
 
-            std::shared_ptr<CStreetMap::SWay> way = FindWayBetweenNode(prevNodeID, nodeID); 
+           std::shared_ptr<CStreetMap::SWay> way = FindWayBetweenNodes(prevNodeID, nodeID);
             std::string wayName = way ? GetWayName(way) : "unknown road"; 
 
             std::stringstream stepSs; 
             switch(mode){
                 case ETransportationMode::Walk: 
-                    stepSs<<"Walk to node " << nodeID << "via " << wayName << "(" << FormatDistance(stepDistance) << ")"; 
+                    stepSs << "Walk to node " << nodeID << " via " << wayName << " (" << FormatDistance(stepDistance) << ")";
                     break; 
                 
                 case ETransportationMode::Bus: 
@@ -301,7 +301,7 @@ struct CDijkstraTransportationPlanner::SImplementation{
         }
 
         std::stringstream arrivalSs; 
-        arrivalSs<< "Arrive at node" << path.back().second; 
+        arrivalSs << "Arrive at node " << path.back().second;
         desc.push_back(arrivalSs.str()); 
 
         return true; 
@@ -326,7 +326,7 @@ struct CDijkstraTransportationPlanner::SImplementation{
     std::string FormatDistance(double meters) const {
         if (meters < 1000){
             int roundedMeters = static_cast <int>(meters  + 0.5); 
-            return std:: to_string(roundedMeters) + "meters"; 
+            return std::to_string(roundedMeters) + " meters";
 
         } else {
             double km = meters/1000.0; 
