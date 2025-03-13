@@ -1,12 +1,18 @@
+#include <string>
+#include <memory>
+#include <vector>
+#include <unordered_map>
+#include <algorithm>
+#include <cmath>
+#include <iostream>
+#include "StreetMap.h"
+#include "BusSystem.h"
+#include "PathRouter.h"
+#include "DijkstraPathRouter.h"
+#include "GeographicUtils.h"
+#include "StringUtils.h"
+#include "BusSystemIndexer.h"
 #include "DijkstraTransportationPlanner.h"
-#include <unordered_map> 
-#include <vector> 
-#include <limits> 
-#include <queue> 
-#include <algorithm> 
-#include <cmath> 
-#include <sstream> 
-
 
 struct CDijkstraTransportationPlanner::SImplementation{
     
@@ -45,7 +51,7 @@ struct CDijkstraTransportationPlanner::SImplementation{
             }
         }
 
-        std::sort(SortedNode.begin(), SortedNode.end()),[](const auto& a, const auto& b){return a->ID() < b->ID(); }; 
+        std::sort(SortedNode.begin(), SortedNode.end(), [](const auto& a, const auto& b){return a->ID() < b->ID(); });
 
         BuildGraph(); 
     };
@@ -186,7 +192,7 @@ struct CDijkstraTransportationPlanner::SImplementation{
         }
         distances[srcVertex] = 0.0; 
 
-        pq.pus({0.0, srcVertex}); 
+        pq.push({0.0, srcVertex}); 
 
         while (!pq.empty()){
             auto [currentDist, currentVertex] = pq.top(); 
@@ -277,7 +283,7 @@ struct CDijkstraTransportationPlanner::SImplementation{
 
             double stepDistance = CalculateDistance(previous, current); 
 
-            std::shared_ptr<CStreetMap::SWay> way = FindWayBetweenNode(previous, nodeID); 
+            std::shared_ptr<CStreetMap::SWay> way = FindWayBetweenNode(prevNodeID, nodeID); 
             std::string wayName = way ? GetWayName(way); 
 
             std::stringstream stepSs; 
@@ -309,7 +315,7 @@ struct CDijkstraTransportationPlanner::SImplementation{
             }
 
             for (size_t j = 0; j < way ->NodeCount()-1; ++j){
-                if ((way ->GetNodeID(j) == node1 && way->GetNodeID(j+1) == node2) || (!isOneWay(way) && way ->GetNode(j) == node2 && way->GetNodeID(j+!) == node1)){
+                if ((way ->GetNodeID(j) == node1 && way->GetNodeID(j+1) == node2) || (!isOneWay(way) && way ->GetNode(j) == node2 && way->GetNodeID(j+1) == node1)){
                     return way; 
                 }
             }
@@ -326,7 +332,7 @@ struct CDijkstraTransportationPlanner::SImplementation{
             double km = meters/1000.0; 
             std::stringstream ss; 
             ss.precision(1); 
-            ss <<std::fix<<km<< "kilometers"; 
+            ss <<std::fixed <<km<< "kilometers"; 
             return ss.str(); 
         }
     }
