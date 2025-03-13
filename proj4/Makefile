@@ -8,7 +8,7 @@ INCLUDE_DIR = include
 # Compiler and flags
 CXX = g++
 
-CXXFLAGS = -std=c++17 -Wall -g -I$(INCLUDE_DIR) -I/opt/homebrew/opt/googletest/include
+CXXFLAGS = -std=c++17 -Wall -Wextra -Wno-unused-parameter -I ./include -I/opt/homebrew/opt/googletest/include
 LDFLAGS = -L/opt/homebrew/opt/googletest/lib -lgtest -lgtest_main -pthread -lexpat
 
 # Executables
