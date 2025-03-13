@@ -90,9 +90,9 @@ struct CDijkstraTransportationPlanner::SImplementation{
 
                 double distance = CalculateDistance (node1, node2); 
 
-                bool isOneWay = isOneWay(way); 
+                bool oneWay = isOneWay(way); 
                 AddEdge(v1,v2, distance); 
-                if (!isOneWay){
+                if (!oneWay){
                     AddEdge(v2, v1, distance); 
                 }
             }
