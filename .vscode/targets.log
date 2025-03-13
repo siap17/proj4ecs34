@@ -10,7 +10,7 @@ make all --print-data-base --no-builtin-variables --no-builtin-rules --question
 make: *** No rule to make target `all'.  Stop.
 
 
-# Make data base, printed on Tue Mar 11 06:13:54 2025
+# Make data base, printed on Thu Mar 13 00:04:10 2025
 
 # Variables
 
@@ -26,6 +26,7 @@ VSCODE_CRASH_REPORTER_PROCESS_TYPE = extensionHost
 @D = $(patsubst %/,%,$(dir $@))
 # automatic
 @F = $(notdir $@)
+ 
 # makefile
 CURDIR := /Users/asmaaslam/proj4ecs34
 # makefile
@@ -34,6 +35,8 @@ SHELL = /bin/sh
 VSCODE_NLS_CONFIG = {"userLocale":"en-us","osLocale":"en-us","resolvedLanguage":"en","defaultMessagesFile":"/private/var/folders/bs/nk802mhn14q2h8v1c5tjg2r40000gn/T/AppTranslocation/6DAFD5EB-F9F7-4B27-9412-4D3DEAF96F73/d/Visual Studio Code.app/Contents/Resources/app/out/nls.messages.json","locale":"en-us","availableLanguages":{}}
 # environment
 _ = /usr/bin/make
+# environment
+VSCODE_PID = 691
 # makefile
 MAKEFILE_LIST := 
 # environment
@@ -46,6 +49,8 @@ VSCODE_CWD = /
 GSETTINGS_SCHEMA_DIR = /opt/anaconda3/share/glib-2.0/schemas
 # environment
 PATH = /opt/anaconda3/bin:/opt/anaconda3/condabin:/opt/homebrew/bin:/opt/homebrew/sbin:/opt/local/bin:/opt/local/sbin:/Library/Frameworks/Python.framework/Versions/3.11/bin:/usr/local/bin:/System/Cryptexes/App/usr/bin:/usr/bin:/bin:/usr/sbin:/sbin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/local/bin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/bin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/appleinternal/bin:/opt/X11/bin:/Library/TeX/texbin
+# environment
+VSCODE_DOTNET_INSTALL_TOOL_ORIGINAL_HOME = /Users/asmaaslam
 # environment
 LaunchInstanceID = 62EBAD05-B180-415E-B477-D9696EB316C3
 # environment
@@ -79,7 +84,7 @@ VSCODE_CODE_CACHE_PATH = /Users/asmaaslam/Library/Application Support/Code/Cache
 # environment
 LOGNAME = asmaaslam
 # environment
-APPLICATION_INSIGHTS_NO_DIAGNOSTIC_CHANNEL = true
+APPLICATION_INSIGHTS_NO_DIAGNOSTIC_CHANNEL = 1
 # environment
 CONDA_PROMPT_MODIFIER = (base) 
 # environment
@@ -112,6 +117,7 @@ MAKE_COMMAND := /Library/Developer/CommandLineTools/usr/bin/make
 .VARIABLES := 
 # environment
 TMPDIR = /var/folders/bs/nk802mhn14q2h8v1c5tjg2r40000gn/T/
+ 
 # automatic
 *F = $(notdir $*)
 # environment
@@ -130,6 +136,8 @@ XPC_SERVICE_NAME = application.com.microsoft.VSCode.41069025.41069031
 HOMEBREW_PREFIX = /opt/homebrew
 # automatic
 +D = $(patsubst %/,%,$(dir $+))
+# environment
+VSCODE_L10N_BUNDLE_LOCATION = 
 # automatic
 +F = $(notdir $+)
 # environment
@@ -159,11 +167,11 @@ MAKELEVEL := 0
 # environment
 CONDA_PREFIX = /opt/anaconda3
 # environment
-VSCODE_PID = 691
+APPLICATIONINSIGHTS_CONFIGURATION_CONTENT = {}
 # environment
 LANG = C
 # variable set hash-table stats:
-# Load=74/1024=7%, Rehash=0, Collisions=2/95=2%
+# Load=77/1024=8%, Rehash=0, Collisions=3/98=3%
 
 # Pattern-specific Variable Values
 
@@ -197,6 +205,7 @@ all:
 #  File has not been updated.
 
 # Not a target:
+ 
 Makefile:
 #  A default, MAKEFILES, or -include/sinclude makefile.
 #  Implicit rule search has been done.
@@ -245,6 +254,6 @@ GNUmakefile:
 # strcache size: total = 0 / max = 0 / min = 4096 / avg = 0
 # strcache free: total = 0 / max = 0 / min = 4096 / avg = 0
 
-# Finished Make data base on Tue Mar 11 06:13:54 2025
+# Finished Make data base on Thu Mar 13 00:04:10 2025
 
  
