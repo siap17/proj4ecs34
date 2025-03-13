@@ -31,7 +31,7 @@ struct CDijkstraTransportationPlanner::SImplementation{
     std::shared_ptr<CStreetMap> Map; 
     std::vector<std::shared_ptr<CStreetMap::SNode>> SortedNode; 
 
-    SImplementation(std::shared_ptr<SConfiguration> config){
+    SImplementation(std::shared_ptr<SConfiguration> config) : configuration(config){
         if (!config || !config->StreetMap()){
             return; 
         }
@@ -284,7 +284,7 @@ struct CDijkstraTransportationPlanner::SImplementation{
             double stepDistance = CalculateDistance(previous, current); 
 
             std::shared_ptr<CStreetMap::SWay> way = FindWayBetweenNode(prevNodeID, nodeID); 
-            std::string wayName = way ? GetWayName(way); 
+            std::string wayName = way ? GetWayName(way) : "unknown road"; 
 
             std::stringstream stepSs; 
             switch(mode){
@@ -342,9 +342,7 @@ CDijkstraTransportationPlanner::CDijkstraTransportationPlanner(std::shared_ptr<S
     DImplementation = std::make_unique<SImplementation>(config);
 };
 
-CDijkstraTransportationPlanner::~CDijkstraTransportationPlanner(){
-
-};
+CDijkstraTransportationPlanner::~CDijkstraTransportationPlanner() = default; 
 
 
 std::size_t CDijkstraTransportationPlanner::NodeCount() const noexcept{
@@ -361,7 +359,7 @@ double CDijkstraTransportationPlanner::FindShortestPath(TNodeID src, TNodeID des
 };
 
 double CDijkstraTransportationPlanner::FindFastestPath(TNodeID src, TNodeID dest, std::vector< TTripStep > &path) {
-    return DImplementation->FindFastestPath(src,dest,path);
+    return DImplementation ->FindFastestPath(src, dest, path); 
 };
 
 bool CDijkstraTransportationPlanner::GetPathDescription(const std::vector< TTripStep > &path, std::vector< std::string > &desc) const {
