@@ -146,11 +146,17 @@ struct CDijkstraTransportationPlanner::SImplementation {
     double CalculateDistance(const std::shared_ptr<CStreetMap::SNode>& node1, 
                              const std::shared_ptr<CStreetMap::SNode>& node2) const {
         // Use GeographicUtils for Haversine distance
-        double distanceInMiles = SGeographicUtils::HaversineDistanceInMiles(node1->Location(), node2->Location());
-        
+        if (!node1 || !node2){
+            return NoPath; 
+        }
+
+        double DistanceInMiles = SGeographicUtils::HaversineDistanceInMiles(
+            node1->Location(), 
+            node2->Location() 
+        ); 
         // Convert miles to meters (1 mile = 1609.344 meters)
         const double MetersPerMile = 1609.344;
-        return distanceInMiles * MetersPerMile;
+        return std::max(0.0, DistanceInMiles * MetersPerMile); 
     }
 
     std::size_t NodeCount() const noexcept {
@@ -457,7 +463,7 @@ struct CDijkstraTransportationPlanner::SImplementation {
     
     // No path found
     return 1.0;
-}
+} 
 
     bool GetPathDescription(const std::vector<TTripStep>& path, std::vector<std::string>& desc) const {
         desc.clear();
