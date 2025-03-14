@@ -199,6 +199,8 @@ struct CDijkstraTransportationPlanner::SImplementation {
         // Start from source
         pq.push({0.0, srcVertex});
 
+        bool pathFound = false; 
+
         // Main Dijkstra loop
         while (!pq.empty()) {
             auto [currentDist, currentVertex] = pq.top();
@@ -206,6 +208,7 @@ struct CDijkstraTransportationPlanner::SImplementation {
 
             // If we reached the destination, we're done
             if (currentVertex == destVertex) {
+                pathFound = true; 
                 break;
             }
 
@@ -228,7 +231,7 @@ struct CDijkstraTransportationPlanner::SImplementation {
         }
 
         // Check if we found a path
-        if (distances[destVertex] == NoPath || previous.find(destVertex) == previous.end()) {
+        if (!pathFound || distances[destVertex] == NoPath || previous.find(destVertex) == previous.end()) {
             return 1.0;
         }
 
@@ -292,15 +295,19 @@ struct CDijkstraTransportationPlanner::SImplementation {
         // First, calculate walking time
         std::vector<TNodeID> walkPath;
         double walkDistance = FindShortestPath(src, dest, walkPath);
-        double walkTime = (walkDistance == NoPath) ? NoPath : walkDistance / configuration->WalkSpeed();
         
+        if (walkDistance == 1.0){
+            return 1.0; 
+        }
+
+        double walkTime = walkDistance / configuration -> WalkSpeed(); 
+
         // Walking-only path to use as fallback
         std::vector<TTripStep> walkOnlyPath;
-        if (walkDistance != NoPath) {
-            for (TNodeID node : walkPath) {
-                walkOnlyPath.push_back({ETransportationMode::Walk, node});
-            }
+        for (TNodeID node : walkPath) {
+            walkOnlyPath.push_back({ETransportationMode::Walk, node});
         }
+    
         
         // Get bus system if available
         auto busSystem = configuration->BusSystem();
@@ -313,130 +320,144 @@ struct CDijkstraTransportationPlanner::SImplementation {
         // Try to find a bus route
         // First, find closest bus stops to src and dest
         TNodeID srcBusStopNodeID = FindClosestBusStop(src, busSystem);
-        TNodeID destBusStopNodeID = FindClosestBusStop(dest, busSystem);
+    TNodeID destBusStopNodeID = FindClosestBusStop(dest, busSystem);
+    
+    // If we couldn't find a bus stop near either src or dest, just walk
+    if (srcBusStopNodeID == 0 || destBusStopNodeID == 0) {
+        path = walkOnlyPath;
+        return walkTime;
+    }
+    
+    // Find path to and from bus stops
+    std::vector<TNodeID> pathToStop;
+    double distanceToStop = FindShortestPath(src, srcBusStopNodeID, pathToStop);
+    
+    // If no path to stop
+    if (distanceToStop == 1.0) {
+        path = walkOnlyPath;
+        return walkTime;
+    }
+    
+    double timeToStop = distanceToStop / configuration->WalkSpeed();
+    
+    std::vector<TNodeID> pathFromStop;
+    double distanceFromStop = FindShortestPath(destBusStopNodeID, dest, pathFromStop);
+    
+    // If no path from stop
+    if (distanceFromStop == 1.0) {
+        path = walkOnlyPath;
+        return walkTime;
+    }
+    
+    double timeFromStop = distanceFromStop / configuration->WalkSpeed();
+    
+    // If we can't walk to/from stops, use walking-only path
+    if (timeToStop == NoPath || timeFromStop == NoPath) {
+        path = walkOnlyPath;
+        return walkTime;
+    }
+    
+    // Find fastest bus route between stops
+    double fastestBusTime = NoPath;
+    std::vector<TTripStep> fastestBusPath;
+    
+    // Loop through all bus routes
+    for (size_t i = 0; i < busSystem->RouteCount(); i++) {
+        auto route = busSystem->RouteByIndex(i);
+        if (!route) continue;
         
-        // If we couldn't find a bus stop near either src or dest, just walk
-        if (srcBusStopNodeID == 0 || destBusStopNodeID == 0) {
-            path = walkOnlyPath;
-            return walkTime;
+        // Find src and dest positions in the route
+        int srcPos = -1, destPos = -1;
+        
+        for (size_t j = 0; j < route->StopCount(); j++) {
+            auto stopID = route->GetStopID(j);
+            auto stop = busSystem->StopByID(stopID);
+            if (!stop) continue;
+            
+            if (stop->NodeID() == srcBusStopNodeID) {
+                srcPos = j;
+            }
+            if (stop->NodeID() == destBusStopNodeID) {
+                destPos = j;
+            }
         }
         
-        // Find path to and from bus stops
-        std::vector<TNodeID> pathToStop;
-        double distanceToStop = FindShortestPath(src, srcBusStopNodeID, pathToStop);
-        double timeToStop = (distanceToStop == NoPath) ? NoPath : distanceToStop / configuration->WalkSpeed();
-        
-        std::vector<TNodeID> pathFromStop;
-        double distanceFromStop = FindShortestPath(destBusStopNodeID, dest, pathFromStop);
-        double timeFromStop = (distanceFromStop == NoPath) ? NoPath : distanceFromStop / configuration->WalkSpeed();
-        
-        // If we can't walk to/from stops, use walking-only path
-        if (timeToStop == NoPath || timeFromStop == NoPath) {
-            path = walkOnlyPath;
-            return walkTime;
-        }
-        
-        // Find fastest bus route between stops
-        double fastestBusTime = NoPath;
-        std::vector<TTripStep> fastestBusPath;
-        
-        // Loop through all bus routes
-        for (size_t i = 0; i < busSystem->RouteCount(); i++) {
-            auto route = busSystem->RouteByIndex(i);
-            if (!route) continue;
+        // If we found both stops and src comes before dest in the route
+        if (srcPos != -1 && destPos != -1 && srcPos < destPos) {
+            // Calculate bus time
+            double totalBusDistance = 0.0;
+            std::vector<TNodeID> busPart;
             
-            // Find src and dest positions in the route
-            int srcPos = -1, destPos = -1;
-            
-            for (size_t j = 0; j < route->StopCount(); j++) {
+            for (int j = srcPos; j <= destPos; j++) {
                 auto stopID = route->GetStopID(j);
                 auto stop = busSystem->StopByID(stopID);
                 if (!stop) continue;
                 
-                if (stop->NodeID() == srcBusStopNodeID) {
-                    srcPos = j;
-                }
-                if (stop->NodeID() == destBusStopNodeID) {
-                    destPos = j;
+                busPart.push_back(stop->NodeID());
+                
+                if (j > srcPos) {
+                    auto prevStopID = route->GetStopID(j-1);
+                    auto prevStop = busSystem->StopByID(prevStopID);
+                    if (!prevStop) continue;
+                    
+                    auto prevNode = GetNodeByID(prevStop->NodeID());
+                    auto currNode = GetNodeByID(stop->NodeID());
+                    if (!prevNode || !currNode) continue;
+                    
+                    totalBusDistance += CalculateDistance(prevNode, currNode);
                 }
             }
             
-            // If we found both stops and src comes before dest in the route
-            if (srcPos != -1 && destPos != -1 && srcPos < destPos) {
-                // Calculate bus time
-                double totalBusDistance = 0.0;
-                std::vector<TNodeID> busPart;
+            // Calculate bus time (in seconds)
+            // Assuming bus speed is 80% of default speed limit
+            double busSpeed = configuration->DefaultSpeedLimit() * 0.8 * 0.44704; // mph * 0.44704 = m/s
+            double busTimeNoStops = totalBusDistance / busSpeed;
+            
+            // Add stop time for each stop except the last one
+            double busTime = busTimeNoStops + (destPos - srcPos) * configuration->BusStopTime();
+            
+            // Calculate total time for this route
+            double totalTime = timeToStop + busTime + timeFromStop;
+            
+            // If this is faster than our best so far, update
+            if (totalTime < fastestBusTime) {
+                fastestBusTime = totalTime;
                 
-                for (int j = srcPos; j <= destPos; j++) {
-                    auto stopID = route->GetStopID(j);
-                    auto stop = busSystem->StopByID(stopID);
-                    if (!stop) continue;
-                    
-                    busPart.push_back(stop->NodeID());
-                    
-                    if (j > srcPos) {
-                        auto prevStopID = route->GetStopID(j-1);
-                        auto prevStop = busSystem->StopByID(prevStopID);
-                        if (!prevStop) continue;
-                        
-                        auto prevNode = GetNodeByID(prevStop->NodeID());
-                        auto currNode = GetNodeByID(stop->NodeID());
-                        if (!prevNode || !currNode) continue;
-                        
-                        totalBusDistance += CalculateDistance(prevNode, currNode);
-                    }
+                // Build the path
+                fastestBusPath.clear();
+                
+                // Walk to first bus stop
+                for (TNodeID node : pathToStop) {
+                    fastestBusPath.push_back({ETransportationMode::Walk, node});
                 }
                 
-                // Calculate bus time (in seconds)
-                // Assuming bus speed is 80% of default speed limit
-                double busSpeed = configuration->DefaultSpeedLimit() * 0.8 * 0.44704; // mph * 0.44704 = m/s
-                double busTimeNoStops = totalBusDistance / busSpeed;
+                // Bus ride (skip first to avoid duplicate)
+                for (size_t j = 1; j < busPart.size(); j++) {
+                    fastestBusPath.push_back({ETransportationMode::Bus, busPart[j]});
+                }
                 
-                // Add stop time for each stop except the last one
-                double busTime = busTimeNoStops + (destPos - srcPos) * configuration->BusStopTime();
-                
-                // Calculate total time for this route
-                double totalTime = timeToStop + busTime + timeFromStop;
-                
-                // If this is faster than our best so far, update
-                if (totalTime < fastestBusTime) {
-                    fastestBusTime = totalTime;
-                    
-                    // Build the path
-                    fastestBusPath.clear();
-                    
-                    // Walk to first bus stop
-                    for (TNodeID node : pathToStop) {
-                        fastestBusPath.push_back({ETransportationMode::Walk, node});
-                    }
-                    
-                    // Bus ride (skip first to avoid duplicate)
-                    for (size_t j = 1; j < busPart.size(); j++) {
-                        fastestBusPath.push_back({ETransportationMode::Bus, busPart[j]});
-                    }
-                    
-                    // Walk from last bus stop to destination (skip first to avoid duplicate)
-                    for (size_t j = 1; j < pathFromStop.size(); j++) {
-                        fastestBusPath.push_back({ETransportationMode::Walk, pathFromStop[j]});
-                    }
+                // Walk from last bus stop to destination (skip first to avoid duplicate)
+                for (size_t j = 1; j < pathFromStop.size(); j++) {
+                    fastestBusPath.push_back({ETransportationMode::Walk, pathFromStop[j]});
                 }
             }
         }
-        
-        // Compare bus route with walking-only route
-        if (walkTime != NoPath && (fastestBusTime == NoPath || walkTime <= fastestBusTime)) {
-            // Walking is faster
-            path = walkOnlyPath;
-            return walkTime;
-        } else if (fastestBusTime != NoPath) {
-            // Bus is faster
-            path = fastestBusPath;
-            return fastestBusTime;
-        }
-        
-        // No path found
-        return NoPath;
     }
+    
+    // Compare bus route with walking-only route
+    if (walkTime != NoPath && (fastestBusTime == NoPath || walkTime <= fastestBusTime)) {
+        // Walking is faster
+        path = walkOnlyPath;
+        return walkTime;
+    } else if (fastestBusTime != NoPath) {
+        // Bus is faster
+        path = fastestBusPath;
+        return fastestBusTime;
+    }
+    
+    // No path found
+    return 1.0;
+}
 
     bool GetPathDescription(const std::vector<TTripStep>& path, std::vector<std::string>& desc) const {
         desc.clear();
