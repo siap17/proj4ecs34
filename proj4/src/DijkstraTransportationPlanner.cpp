@@ -173,10 +173,14 @@ struct CDijkstraTransportationPlanner::SImplementation {
         }
         
         // Check if src and dest nodes exist in our mapping
-        if (nodeToVertex.find(src) == nodeToVertex.end() || 
-            nodeToVertex.find(dest) == nodeToVertex.end()){
-            return NoPath; 
+        if (nodeToVertex.find(src) == nodeToVertex.end() || nodeToVertex.find(dest) == nodeToVertex.end()){
+            return  1.0; 
         }
+
+        if (distances[destVertex] == NoPath || previous.find(destVertex) == previous.end()){
+            return 1.0; 
+        }
+
 
         // Get vertex IDs for source and destination
         TVertexID srcVertex = nodeToVertex[src];
