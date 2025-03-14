@@ -166,13 +166,12 @@ struct CDijkstraTransportationPlanner::SImplementation {
 
     double FindShortestPath(TNodeID src, TNodeID dest, std::vector<TNodeID>& path) {
         path.clear();
-        
         // Special case: if src and dest are the same
         if (src == dest) {
             path.push_back(src);
             return 0.0;
         }
-
+        
         // Check if src and dest nodes exist in our mapping
         if (nodeToVertex.find(src) == nodeToVertex.end() || 
             nodeToVertex.find(dest) == nodeToVertex.end()){
@@ -230,7 +229,7 @@ struct CDijkstraTransportationPlanner::SImplementation {
 
         // Check if we found a path
         if (distances[destVertex] == NoPath || previous.find(destVertex) == previous.end()) {
-            return NoPath;
+            return 1.0;
         }
 
         // Reconstruct the path
@@ -280,18 +279,17 @@ struct CDijkstraTransportationPlanner::SImplementation {
 
     double FindFastestPath(TNodeID src, TNodeID dest, std::vector<TTripStep>& path) {
         path.clear();
-        
         // Special case: if src and dest are the same
         if (src == dest) {
             path.push_back({ETransportationMode::Walk, src});
             return 0.0;
         }
 
-        // Check if src and dest nodes exist in our mapping
-        if (nodeToVertex.find(src) == nodeToVertex.end() || 
-            nodeToVertex.find(dest) == nodeToVertex.end()){
-            return NoPath; 
+
+        if (nodeToVertex.find(src) == nodeToVertex.end() || nodeToVertex.find(dest) == nodeToVertex.end()){
+            return 1.0; 
         }
+    
 
         // First, calculate walking time
         std::vector<TNodeID> walkPath;
