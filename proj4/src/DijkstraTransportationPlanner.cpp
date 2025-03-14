@@ -177,10 +177,6 @@ struct CDijkstraTransportationPlanner::SImplementation {
             return  1.0; 
         }
 
-        if (distances[destVertex] == NoPath || previous.find(destVertex) == previous.end()){
-            return 1.0; 
-        }
-
 
         // Get vertex IDs for source and destination
         TVertexID srcVertex = nodeToVertex[src];
@@ -292,9 +288,7 @@ struct CDijkstraTransportationPlanner::SImplementation {
 
         if (nodeToVertex.find(src) == nodeToVertex.end() || nodeToVertex.find(dest) == nodeToVertex.end()){
             return 1.0; 
-        }
-    
-
+        } 
         // First, calculate walking time
         std::vector<TNodeID> walkPath;
         double walkDistance = FindShortestPath(src, dest, walkPath);
