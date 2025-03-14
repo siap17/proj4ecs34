@@ -19,6 +19,19 @@ EXECUTABLES = $(BIN_DIR)/testcsvbs \
               $(BIN_DIR)/testtp \
               $(BIN_DIR)/testcl
 
+# Object files for transportation planner test
+TESTTP_OBJS = $(OBJ_DIR)/DijkstraTransportationPlanner.o \
+              $(OBJ_DIR)/CSVOSMTransportationPlannerTest.o \
+              $(OBJ_DIR)/DijkstraPathRouter.o \
+              $(OBJ_DIR)/BusSystemIndexer.o \
+              $(OBJ_DIR)/CSVBusSystem.o \
+              $(OBJ_DIR)/OpenStreetMap.o \
+              $(OBJ_DIR)/XMLReader.o \
+              $(OBJ_DIR)/DSVReader.o \
+              $(OBJ_DIR)/StringDataSource.o \
+              $(OBJ_DIR)/StringUtils.o \
+              $(OBJ_DIR)/GeographicUtils.o
+
 # Default target
 all: directories $(EXECUTABLES) runtests
 
@@ -35,7 +48,6 @@ $(OBJ_DIR)/%.o: $(SRC_DIR)/%.cpp
 $(OBJ_DIR)/%.o: $(TEST_SRC_DIR)/%.cpp
 	$(CXX) $(CXXFLAGS) -c $< -o $@
 
-
 # Link object files into executables for each test
 $(BIN_DIR)/testcsvbs: $(OBJ_DIR)/CSVBusSystem.o $(OBJ_DIR)/CSVBusSystemTest.o $(OBJ_DIR)/DSVReader.o $(OBJ_DIR)/StringDataSource.o $(OBJ_DIR)/StringUtils.o
 	$(CXX) $^ -o $@ $(LDFLAGS)
@@ -49,11 +61,15 @@ $(BIN_DIR)/testdpr: $(OBJ_DIR)/DijkstraPathRouter.o $(OBJ_DIR)/DijkstraPathRoute
 $(BIN_DIR)/testcsvbsi: $(OBJ_DIR)/BusSystemIndexer.o $(OBJ_DIR)/CSVBusSystemIndexerTest.o $(OBJ_DIR)/CSVBusSystem.o $(OBJ_DIR)/DSVReader.o $(OBJ_DIR)/StringDataSource.o $(OBJ_DIR)/StringUtils.o
 	$(CXX) $^ -o $@ $(LDFLAGS)
 
-$(BIN_DIR)/testtp: $(OBJ_DIR)/DijkstraTransportationPlanner.o $(OBJ_DIR)/CSVOSMTransportationPlannerTest.o $(OBJ_DIR)/DijkstraPathRouter.o $(OBJ_DIR)/BusSystemIndexer.o $(OBJ_DIR)/CSVBusSystem.o $(OBJ_DIR)/OpenStreetMap.o $(OBJ_DIR)/XMLReader.o $(OBJ_DIR)/DSVReader.o $(OBJ_DIR)/StringDataSource.o $(OBJ_DIR)/StringUtils.o
+$(BIN_DIR)/testtp: $(TESTTP_OBJS)
 	$(CXX) $^ -o $@ $(LDFLAGS)
 
 $(BIN_DIR)/testcl: $(OBJ_DIR)/TransportationPlannerCommandLine.o $(OBJ_DIR)/TPCommandLineTest.o $(OBJ_DIR)/StringDataSource.o $(OBJ_DIR)/StringDataSink.o
 	$(CXX) $^ -o $@ $(LDFLAGS)
+
+# Explicitly define rule for GeographicUtils.o
+$(OBJ_DIR)/GeographicUtils.o: $(SRC_DIR)/GeographicUtils.cpp
+	$(CXX) $(CXXFLAGS) -c $< -o $@
 
 # Run tests in the specified order
 runtests: $(EXECUTABLES)
