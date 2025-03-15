@@ -222,7 +222,6 @@ struct CDijkstraTransportationPlanner::SImplementation {
 
     double FindShortestPath(TNodeID src, TNodeID dest, std::vector<TNodeID>& path) {
         path.clear();
-        
         // Special case: if src and dest are the same
         if (src == dest) {
             path.push_back(src);
@@ -231,46 +230,49 @@ struct CDijkstraTransportationPlanner::SImplementation {
         
         // Check if src and dest nodes exist in our mapping
         if (nodeToVertex.find(src) == nodeToVertex.end() || 
-            nodeToVertex.find(dest) == nodeToVertex.end()) {
-            return CPathRouter::NoPathExists;  // Use the correct constant
+            nodeToVertex.find(dest) == nodeToVertex.end()){
+            return NoPath; 
         }
-        
+
         // Get vertex IDs for source and destination
         TVertexID srcVertex = nodeToVertex[src];
         TVertexID destVertex = nodeToVertex[dest];
-        
+
         // Priority queue for Dijkstra's algorithm
         using QueueElement = std::pair<double, TVertexID>; // (distance, vertex)
         std::priority_queue<QueueElement, std::vector<QueueElement>, std::greater<QueueElement>> pq;
-        
+
         // Initialize distances and previous vertex map
         std::unordered_map<TVertexID, double> distances;
         std::unordered_map<TVertexID, TVertexID> previous;
-        
+
         // Set initial distances to infinity
         for (const auto& [vertex, _] : vertices) {
-            distances[vertex] = CPathRouter::NoPathExists;  // Use the correct constant
+            distances[vertex] = NoPath;
         }
         distances[srcVertex] = 0.0;
-        
+
         // Start from source
         pq.push({0.0, srcVertex});
-        
+
+        bool pathFound = false; 
+
         // Main Dijkstra loop
         while (!pq.empty()) {
             auto [currentDist, currentVertex] = pq.top();
             pq.pop();
-            
+
             // If we reached the destination, we're done
             if (currentVertex == destVertex) {
+                pathFound = true; 
                 break;
             }
-            
+
             // Skip if we already found a better path
             if (currentDist > distances[currentVertex]) {
                 continue;
             }
-            
+
             // Process all neighbors
             for (const auto& [neighbor, weight] : adjList[currentVertex]) {
                 double newDist = currentDist + weight;
@@ -283,12 +285,12 @@ struct CDijkstraTransportationPlanner::SImplementation {
                 }
             }
         }
-        
-        // Check if we found a path - update this condition
-        if (distances[destVertex] == CPathRouter::NoPathExists || previous.find(destVertex) == previous.end()) {
-            return CPathRouter::NoPathExists;  // Use the correct constant
+
+        // Check if we found a path
+        if (!pathFound || distances[destVertex] == NoPath || previous.find(destVertex) == previous.end()) {
+            return NoPath;
         }
-        
+
         // Reconstruct the path
         std::vector<TVertexID> vertexPath;
         for (TVertexID at = destVertex; at != srcVertex; at = previous[at]) {
@@ -298,14 +300,15 @@ struct CDijkstraTransportationPlanner::SImplementation {
         
         // Reverse to get source-to-destination order
         std::reverse(vertexPath.begin(), vertexPath.end());
-        
+
         // Convert vertex IDs to node IDs
         for (TVertexID vertex : vertexPath) {
             path.push_back(vertexToNode[vertex]);
         }
-        
+
         return distances[destVertex];
     }
+
     double FindFastestPath(TNodeID src, TNodeID dest, std::vector<TTripStep>& path) {
         path.clear();
         // Special case: if src and dest are the same
