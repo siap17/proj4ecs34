@@ -1,3 +1,4 @@
+//included headers here 
 #include <string>
 #include <memory>
 #include <vector>
@@ -18,30 +19,31 @@
 #include "BusSystemIndexer.h"
 #include "DijkstraTransportationPlanner.h"
 
+//initialized a structure that includes Dijikstra Implementation 
 struct CDijkstraTransportationPlanner::SImplementation {
-    using TVertexID = std::size_t; 
-    static constexpr double NoPath = std::numeric_limits<double>::infinity(); 
+    using TVertexID = std::size_t; //This tracks the size for graph vertices 
+    static constexpr double NoPath = std::numeric_limits<double>::infinity(); //represents an infinite distance 
 
-    std::size_t nextVertexID = 0; 
-    std::unordered_map<TVertexID, std::any> vertices; 
-    std::unordered_map<TVertexID, std::vector<std::pair<TVertexID, double>>> adjList; 
+    std::size_t nextVertexID = 0; //set this to 0  
+    std::unordered_map<TVertexID, std::any> vertices; //stores vertex data 
+    std::unordered_map<TVertexID, std::vector<std::pair<TVertexID, double>>> adjList; // stores adjacencyList 
 
-    std::unordered_map<TNodeID, TVertexID> nodeToVertex; 
+    std::unordered_map<TNodeID, TVertexID> nodeToVertex; //maps the nodeToVertex 
     std::unordered_map<TVertexID, TNodeID> vertexToNode; 
     
     std::shared_ptr<SConfiguration> configuration; 
     std::shared_ptr<CStreetMap> streetMap; 
     std::vector<std::shared_ptr<CStreetMap::SNode>> sortedNodes; 
 
-    SImplementation(std::shared_ptr<SConfiguration> config) : configuration(config) {
-        if (!config || !config->StreetMap()){
+    SImplementation(std::shared_ptr<SConfiguration> config) : configuration(config) { //constructor with SImplementation 
+        if (!config || !config->StreetMap()){ //using smart pointers to manage memory 
             return; 
         }
 
-        streetMap = config->StreetMap(); 
+        streetMap = config->StreetMap(); //ensures a valid streetmap 
 
-        for (size_t i = 0; i < streetMap->NodeCount(); ++i){
-            auto node = streetMap->NodeByIndex(i); 
+        for (size_t i = 0; i < streetMap->NodeCount(); ++i){ //this loads the nodes essentially 
+            auto node = streetMap->NodeByIndex(i); //iterate through every node and AddVertex
             if (node){
                 sortedNodes.push_back(node); 
 
@@ -52,26 +54,26 @@ struct CDijkstraTransportationPlanner::SImplementation {
             }
         }
 
-        std::sort(sortedNodes.begin(), sortedNodes.end(), 
+        std::sort(sortedNodes.begin(), sortedNodes.end(), //sorts through all the nodes 
                  [](const auto& a, const auto& b) { return a->ID() < b->ID(); });
 
-        BuildGraph(); 
+        BuildGraph(); //Builds the graph 
     }
 
     // Helper methods for locating ways and getting names
     std::shared_ptr<CStreetMap::SWay> findWayBetweenNodes(TNodeID node1, TNodeID node2) const {
-        for (size_t i = 0; i < streetMap->WayCount(); ++i) {
+        for (size_t i = 0; i < streetMap->WayCount(); ++i) { //actually buiding the graph representation 
             auto way = streetMap->WayByIndex(i);
             if (!way) continue;
             
-            for (size_t j = 0; j < way->NodeCount() - 1; ++j) {
+            for (size_t j = 0; j < way->NodeCount() - 1; ++j) { //progressing through each street 
                 if ((way->GetNodeID(j) == node1 && way->GetNodeID(j+1) == node2) ||
                     (!IsOneWay(way) && way->GetNodeID(j) == node2 && way->GetNodeID(j+1) == node1)) {
                     return way;
                 }
             }
         }
-        return nullptr;
+        return nullptr; //else return nullptr 
     }
 
     std::string getWayName(const std::shared_ptr<CStreetMap::SWay>& way) const {
@@ -91,33 +93,33 @@ struct CDijkstraTransportationPlanner::SImplementation {
 
     void BuildGraph(){
         for (size_t i = 0; i < streetMap->WayCount(); ++i){
-            auto way = streetMap->WayByIndex(i);
-            if (!way || !IsWayTraversable(way)){
+            auto way = streetMap->WayByIndex(i); //builds a way 
+            if (!way || !IsWayTraversable(way)){ //continues 
                 continue; 
             } 
 
-            for (size_t j = 0; j < way->NodeCount() - 1; ++j){
+            for (size_t j = 0; j < way->NodeCount() - 1; ++j){ //iterates through 
                 TNodeID node1ID = way->GetNodeID(j); 
                 TNodeID node2ID = way->GetNodeID(j+1);
 
-                if (nodeToVertex.find(node1ID) == nodeToVertex.end() || 
+                if (nodeToVertex.find(node1ID) == nodeToVertex.end() ||  //if can go through and find end then continue 
                     nodeToVertex.find(node2ID) == nodeToVertex.end()){
                     continue; 
                 } 
 
-                TVertexID v1 = nodeToVertex[node1ID]; 
+                TVertexID v1 = nodeToVertex[node1ID]; //establishes vetex 1, vertex 2 and node1, node2 
                 TVertexID v2 = nodeToVertex[node2ID]; 
 
-                auto node1 = GetNodeByID(node1ID); 
+                auto node1 = GetNodeByID(node1ID);  //grabs node1 and nod2 id 
                 auto node2 = GetNodeByID(node2ID); 
 
-                if (!node1 || !node2){
+                if (!node1 || !node2){ //if dont exist, continue 
                     continue; 
                 }
 
-                double distance = CalculateDistance(node1, node2); 
+                double distance = CalculateDistance(node1, node2); //this gets the distance 
 
-                bool oneWay = IsOneWay(way); 
+                bool oneWay = IsOneWay(way); //if one way then we add the distance 
                 AddEdge(v1, v2, distance); 
                 if (!oneWay){
                     AddEdge(v2, v1, distance); 
@@ -125,16 +127,16 @@ struct CDijkstraTransportationPlanner::SImplementation {
             }
         }
     }
-
+//this function works to add and edge to Adjacency list 
     void AddEdge(TVertexID from, TVertexID to, double weight){
         adjList[from].push_back({to, weight}); 
     }
-
+//checks if the way is traversable 
     bool IsWayTraversable(const std::shared_ptr<CStreetMap::SWay>& way) const {
         if (!way) {
             return false; 
         } 
-        try {
+        try { //if not then we take "the highway" 
             std::string highway = std::any_cast<std::string>(way->GetAttribute("highway")); 
             return true; 
         } catch (...){
@@ -143,22 +145,22 @@ struct CDijkstraTransportationPlanner::SImplementation {
     }
 
     bool IsOneWay(const std::shared_ptr<CStreetMap::SWay>& way) const {
-        try {
+        try { //checks if it is oneway 
             std::string oneway = std::any_cast<std::string>(way->GetAttribute("oneway")); 
             return oneway == "yes" || oneway == "true" || oneway == "1"; 
         } catch (...){
             return false; 
         }
     }
-
+//this grabs name of the way 
     std::string GetWayName(const std::shared_ptr<CStreetMap::SWay>& way) const {
-        try {
+        try { 
             return std::any_cast<std::string>(way->GetAttribute("name"));
         } catch (...) {
             return "unnamed road";
         }
     }
-
+//This gets the node by ID and initializes a loop through sortedNode and return Node 
     std::shared_ptr<CStreetMap::SNode> GetNodeByID(TNodeID id) const {
         for (const auto& node : sortedNodes) {
             if (node->ID() == id) {
@@ -167,14 +169,14 @@ struct CDijkstraTransportationPlanner::SImplementation {
         }
         return nullptr;
     }
-
+//This calculates the distance 
     double CalculateDistance(const std::shared_ptr<CStreetMap::SNode>& node1, 
                              const std::shared_ptr<CStreetMap::SNode>& node2) const {
         // Use GeographicUtils for Haversine distance
-        if (!node1 || !node2){
+        if (!node1 || !node2){ //NoPath if no node1 and node2 
             return NoPath; 
         }
-
+//This is the DistanceInMiles, grab location of each node 
         double DistanceInMiles = SGeographicUtils::HaversineDistanceInMiles(
             node1->Location(), 
             node2->Location() 
@@ -183,7 +185,7 @@ struct CDijkstraTransportationPlanner::SImplementation {
         const double MetersPerMile = 1609.344;
         return std::max(0.0, DistanceInMiles * MetersPerMile); 
     }
-
+//Get size_t of NodeCount() 
     std::size_t NodeCount() const noexcept {
         return sortedNodes.size();
     }
@@ -199,13 +201,13 @@ struct CDijkstraTransportationPlanner::SImplementation {
     std::string FormatLocation(const std::shared_ptr<CStreetMap::SNode>& node) const {
         auto [lat, lon] = node->Location();
         
-        // Latitude conversion
+        // This converts the latitude
         int latDeg = std::abs(static_cast<int>(lat));
         double latMinFull = (std::abs(lat) - latDeg) * 60.0;
         int latMin = static_cast<int>(latMinFull);
         int latSec = std::round((latMinFull - latMin) * 60.0);
         
-        // Longitude conversion
+        // This converts the lognitude 
         int lonDeg = std::abs(static_cast<int>(lon));
         double lonMinFull = (std::abs(lon) - lonDeg) * 60.0;
         int lonMin = static_cast<int>(lonMinFull);
@@ -220,22 +222,23 @@ struct CDijkstraTransportationPlanner::SImplementation {
         return ss.str();
     }
 
+//This finds the shortest path 
     double FindShortestPath(TNodeID src, TNodeID dest, std::vector<TNodeID>& path) {
         path.clear();
         
-        // Special case: if src and dest are the same
+        // Special case: if src and dest are same 
         if (src == dest) {
-            path.push_back(src);
+            path.push_back(src); //Then we push it back in the path 
             return 0.0;
         }
         
         // Check if src and dest nodes exist in our mapping
         if (nodeToVertex.find(src) == nodeToVertex.end() || 
             nodeToVertex.find(dest) == nodeToVertex.end()) {
-            return CPathRouter::NoPathExists;  // Use the correct constant
+            return CPathRouter::NoPathExists;  // Then we return NoPathExists 
         }
         
-        // Get vertex IDs for source and destination
+        // This gets the VertexID 
         TVertexID srcVertex = nodeToVertex[src];
         TVertexID destVertex = nodeToVertex[dest];
         
