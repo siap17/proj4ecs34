@@ -1,442 +1,483 @@
-#include "DijkstraTransportationPlanner.h" // Main header for the transportation planner
-#include "DijkstraPathRouter.h"           // For CDijkstraPathRouter
-#include "StreetMap.h"                    // For CStreetMap
-#include "BusSystem.h"                    // For CBusSystem
-#include "GeographicUtils.h"              // For CGeographicUtils
-#include <queue>                           // For priority_queue
-#include <unordered_map>                   // For unordered_map
-#include <set>                             // For set
-#include <cmath>                           // For sqrt
-#include <algorithm>                       // For sort
-#include <sstream>                         // For stringstream
-#include <iomanip>                         // For setprecision
-#include <iostream>                        // For standard I/O
+#include <string>
+#include <memory>
+#include <vector>
+#include <unordered_map>
+#include <algorithm>
+#include <cmath>
+#include <iostream>
+#include <queue>
+#include <sstream>
+#include <iomanip>
+#include <any>
+#include "StreetMap.h"
+#include "BusSystem.h"
+#include "PathRouter.h"
+#include "DijkstraPathRouter.h"
+#include "GeographicUtils.h"
+#include "StringUtils.h"
+#include "BusSystemIndexer.h"
+#include "DijkstraTransportationPlanner.h"
 
-// Implementation of the transportation planner
 struct CDijkstraTransportationPlanner::SImplementation {
-    // Shared pointer to configuration
-    std::shared_ptr<SConfiguration> Config;
-    // Vector of sorted nodes
-    std::vector<std::shared_ptr<CStreetMap::SNode>> SortedNodes;
-    // Shared pointer to distance router
-    std::shared_ptr<CDijkstraPathRouter> DistanceRouter;
-    // Shared pointer to time router
-    std::shared_ptr<CDijkstraPathRouter> TimeRouter;
-    // Mapping from node ID to distance vertex ID
-    std::unordered_map<CStreetMap::TNodeID, CPathRouter::TVertexID> NodeIDToDistanceVertexID;
-    // Mapping from node ID to time vertex ID
-    std::unordered_map<CStreetMap::TNodeID, CPathRouter::TVertexID> NodeIDToTimeVertexID;
-    // Mapping from distance vertex ID to node ID
-    std::unordered_map<CPathRouter::TVertexID, CStreetMap::TNodeID> DistanceVertexIDToNodeID;
-    // Mapping from time vertex ID to node ID
-    std::unordered_map<CPathRouter::TVertexID, CStreetMap::TNodeID> TimeVertexIDToNodeID;
-    // Mapping from node ID to index
-    std::unordered_map<CStreetMap::TNodeID, size_t> NodeIDToIndex;
-    // Mapping from bus stop ID to node ID
-    std::unordered_map<CBusSystem::TStopID, CStreetMap::TNodeID> StopIDToNodeID;
-    // Mapping from bus stop ID to stop name
-    std::unordered_map<CBusSystem::TStopID, std::string> StopIDToStopName;
-    // Mapping from node ID to bus stop ID
-    std::unordered_map<CStreetMap::TNodeID, CBusSystem::TStopID> NodeIDToStopID;
-    // Mapping from node ID to bus route information
-    std::unordered_map<CStreetMap::TNodeID, std::set<std::pair<std::string, CStreetMap::TNodeID>>> BusRouteInfo;
+    using TVertexID = std::size_t; 
+    static constexpr double NoPath = std::numeric_limits<double>::infinity(); 
 
-    // Constructor
-    SImplementation(std::shared_ptr<SConfiguration> config)
-        : Config(config) {
-        auto StreetMap = Config->StreetMap();
-        auto BusSystem = Config->BusSystem();
+    std::size_t nextVertexID = 0; 
+    std::unordered_map<TVertexID, std::any> vertices; 
+    std::unordered_map<TVertexID, std::vector<std::pair<TVertexID, double>>> adjList; 
 
-        // Initialize routers
-        DistanceRouter = std::make_shared<CDijkstraPathRouter>();
-        TimeRouter = std::make_shared<CDijkstraPathRouter>();
+    std::unordered_map<TNodeID, TVertexID> nodeToVertex; 
+    std::unordered_map<TVertexID, TNodeID> vertexToNode; 
+    
+    std::shared_ptr<SConfiguration> configuration; 
+    std::shared_ptr<CStreetMap> streetMap; 
+    std::vector<std::shared_ptr<CStreetMap::SNode>> sortedNodes; 
 
-        // Sort nodes by ID
-        for (size_t i = 0; i < StreetMap->NodeCount(); ++i) {
-            auto node = StreetMap->NodeByIndex(i);
-            SortedNodes.push_back(node);
-        }
-        std::sort(SortedNodes.begin(), SortedNodes.end(), [](const auto& a, const auto& b) {
-            return a->ID() < b->ID();
-        });
-
-        // Map nodes to indices
-        for (size_t i = 0; i < SortedNodes.size(); ++i) {
-            NodeIDToIndex[SortedNodes[i]->ID()] = i;
+    SImplementation(std::shared_ptr<SConfiguration> config) : configuration(config) {
+        if (!config || !config->StreetMap()){
+            return; 
         }
 
-        // Add vertices to routers
-        for (size_t i = 0; i < SortedNodes.size(); ++i) {
-            auto node = SortedNodes[i];
-            auto distVertexID = DistanceRouter->AddVertex(node->ID());
-            auto timeVertexID = TimeRouter->AddVertex(node->ID());
-            NodeIDToDistanceVertexID[node->ID()] = distVertexID;
-            NodeIDToTimeVertexID[node->ID()] = timeVertexID;
-            DistanceVertexIDToNodeID[distVertexID] = node->ID();
-            TimeVertexIDToNodeID[timeVertexID] = node->ID();
-        }
+        streetMap = config->StreetMap(); 
 
-        // Map bus stops to nodes
-        for (size_t i = 0; i < BusSystem->StopCount(); ++i) {
-            auto stop = BusSystem->StopByIndex(i);
-            StopIDToNodeID[stop->ID()] = stop->NodeID();
-            auto nodeID = stop->NodeID();
-            if (NodeIDToStopID.find(nodeID) == NodeIDToStopID.end() || stop->ID() < NodeIDToStopID[nodeID]) {
-                NodeIDToStopID[nodeID] = stop->ID();
+        for (size_t i = 0; i < streetMap->NodeCount(); ++i){
+            auto node = streetMap->NodeByIndex(i); 
+            if (node){
+                sortedNodes.push_back(node); 
+
+                TVertexID vID = AddVertex(node); 
+
+                nodeToVertex[node->ID()] = vID; 
+                vertexToNode[vID] = node->ID(); 
             }
         }
 
-        // Build bus route information
-        for (size_t r = 0; r < BusSystem->RouteCount(); ++r) {
-            auto route = BusSystem->RouteByIndex(r);
-            auto routeName = route->Name();
-            for (size_t i = 0; i < route->StopCount() - 1; ++i) {
-                auto currentStopID = route->GetStopID(i);
-                auto nextStopID = route->GetStopID(i + 1);
-                auto currentStop = BusSystem->StopByID(currentStopID);
-                auto nextStop = BusSystem->StopByID(nextStopID);
-                auto currentNodeID = currentStop->NodeID();
-                auto nextNodeID = nextStop->NodeID();
-                BusRouteInfo[currentNodeID].insert({routeName, nextNodeID});
-            }
-        }
+        std::sort(sortedNodes.begin(), sortedNodes.end(), 
+                 [](const auto& a, const auto& b) { return a->ID() < b->ID(); });
 
-        // Process multi-node ways
-        for (size_t i = 0; i < StreetMap->WayCount(); ++i) {
-            auto way = StreetMap->WayByIndex(i);
-            if (way->NodeCount() <= 2) continue;
-
-            bool isOneWay = way->HasAttribute("oneway") && 
-                            (way->GetAttribute("oneway") == "yes" || 
-                             way->GetAttribute("oneway") == "true" || 
-                             way->GetAttribute("oneway") == "1");
-
-            for (size_t j = 1; j < way->NodeCount(); ++j) {
-                auto src = way->GetNodeID(j - 1);
-                auto dest = way->GetNodeID(j);
-                if (src == CStreetMap::InvalidNodeID || dest == CStreetMap::InvalidNodeID) continue;
-
-                auto srcNode = StreetMap->NodeByID(src);
-                auto destNode = StreetMap->NodeByID(dest);
-                if (!srcNode || !destNode) continue;
-
-                double distance = SGeographicUtils::HaversineDistanceInMiles(srcNode->Location(), destNode->Location());
-                if (distance <= 0.0) continue;
-
-                auto srcDistVertex = NodeIDToDistanceVertexID[src];
-                auto destDistVertex = NodeIDToDistanceVertexID[dest];
-                DistanceRouter->AddEdge(srcDistVertex, destDistVertex, distance, false);
-                if (!isOneWay) DistanceRouter->AddEdge(destDistVertex, srcDistVertex, distance, false);
-
-                auto srcTimeVertex = NodeIDToTimeVertexID[src];
-                auto destTimeVertex = NodeIDToTimeVertexID[dest];
-                double walkTime = distance / Config->WalkSpeed();
-                TimeRouter->AddEdge(srcTimeVertex, destTimeVertex, walkTime, false);
-                if (!isOneWay) TimeRouter->AddEdge(destTimeVertex, srcTimeVertex, walkTime, false);
-
-                double bikeTime = distance / Config->BikeSpeed();
-                TimeRouter->AddEdge(srcTimeVertex, destTimeVertex, bikeTime, false);
-                if (!isOneWay) TimeRouter->AddEdge(destTimeVertex, srcTimeVertex, bikeTime, false);
-
-                double speedLimit = Config->DefaultSpeedLimit();
-                if (way->HasAttribute("maxspeed")) {
-                    try {
-                        speedLimit = std::stod(way->GetAttribute("maxspeed"));
-                    } catch (...) {
-                        speedLimit = Config->DefaultSpeedLimit();
-                    }
-                }
-
-                double driveTime = distance / speedLimit;
-                TimeRouter->AddEdge(srcTimeVertex, destTimeVertex, driveTime, false);
-                if (!isOneWay) TimeRouter->AddEdge(destTimeVertex, srcTimeVertex, driveTime, false);
-            }
-        }
-
-        // Process direct ways
-        for (size_t i = 0; i < StreetMap->WayCount(); ++i) {
-            auto way = StreetMap->WayByIndex(i);
-            if (way->NodeCount() != 2) continue;
-
-            bool isOneWay = way->HasAttribute("oneway") && 
-                            (way->GetAttribute("oneway") == "yes" || 
-                             way->GetAttribute("oneway") == "true" || 
-                             way->GetAttribute("oneway") == "1");
-
-            auto src = way->GetNodeID(0);
-            auto dest = way->GetNodeID(1);
-            if (src == CStreetMap::InvalidNodeID || dest == CStreetMap::InvalidNodeID) continue;
-
-            auto srcNode = StreetMap->NodeByID(src);
-            auto destNode = StreetMap->NodeByID(dest);
-            if (!srcNode || !destNode) continue;
-
-            double distance = SGeographicUtils::HaversineDistanceInMiles(srcNode->Location(), destNode->Location());
-            if (distance <= 0.0) continue;
-
-            auto srcDistVertex = NodeIDToDistanceVertexID[src];
-            auto destDistVertex = NodeIDToDistanceVertexID[dest];
-            DistanceRouter->AddEdge(srcDistVertex, destDistVertex, distance, false);
-            if (!isOneWay) DistanceRouter->AddEdge(destDistVertex, srcDistVertex, distance, false);
-
-            auto srcTimeVertex = NodeIDToTimeVertexID[src];
-            auto destTimeVertex = NodeIDToTimeVertexID[dest];
-            double walkTime = distance / Config->WalkSpeed();
-            TimeRouter->AddEdge(srcTimeVertex, destTimeVertex, walkTime, false);
-            if (!isOneWay) TimeRouter->AddEdge(destTimeVertex, srcTimeVertex, walkTime, false);
-
-            double bikeTime = distance / Config->BikeSpeed();
-            TimeRouter->AddEdge(srcTimeVertex, destTimeVertex, bikeTime, false);
-            if (!isOneWay) TimeRouter->AddEdge(destTimeVertex, srcTimeVertex, bikeTime, false);
-
-            double speedLimit = Config->DefaultSpeedLimit();
-            if (way->HasAttribute("maxspeed")) {
-                try {
-                    speedLimit = std::stod(way->GetAttribute("maxspeed"));
-                } catch (...) {
-                    speedLimit = Config->DefaultSpeedLimit();
-                }
-            }
-
-            double driveTime = distance / speedLimit;
-            TimeRouter->AddEdge(srcTimeVertex, destTimeVertex, driveTime, false);
-            if (!isOneWay) TimeRouter->AddEdge(destTimeVertex, srcTimeVertex, driveTime, false);
-        }
-
-        // Add bus route edges to the time router
-        for (const auto& [nodeID, routes] : BusRouteInfo) {
-            for (const auto& [routeName, nextNodeID] : routes) {
-                auto srcNode = StreetMap->NodeByID(nodeID);
-                auto destNode = StreetMap->NodeByID(nextNodeID);
-                if (!srcNode || !destNode) continue;
-
-                double distance = SGeographicUtils::HaversineDistanceInMiles(srcNode->Location(), destNode->Location());
-                double busTime = distance / Config->DefaultSpeedLimit() + (Config->BusStopTime() / 3600.0);
-                auto srcTimeVertex = NodeIDToTimeVertexID[nodeID];
-                auto destTimeVertex = NodeIDToTimeVertexID[nextNodeID];
-                TimeRouter->AddEdge(srcTimeVertex, destTimeVertex, busTime, false);
-            }
-        }
+        BuildGraph(); 
     }
 
-    // Find the bus route between two nodes
-    std::string FindBusRouteBetweenNodes(const CStreetMap::TNodeID& src, const CStreetMap::TNodeID& dest) const {
-        if (BusRouteInfo.count(src) == 0) return "";
-        std::vector<std::string> directRoutes;
-        for (const auto& [routeName, nextNodeID] : BusRouteInfo.at(src)) {
-            if (nextNodeID == dest) directRoutes.push_back(routeName);
-        }
-        if (!directRoutes.empty()) {
-            std::sort(directRoutes.begin(), directRoutes.end());
-            return directRoutes[0];
-        }
-        return "";
-    }
-
-
-    // Format location for display
-    std::string FormatLocation(const std::shared_ptr<CStreetMap::SNode>& node) const {
-    if (!node) return "Invalid Location"; // Handle invalid node
-    return SGeographicUtils::ConvertLLToDMS(node->Location()); // Use ConvertLLToDMS
-}
-
-    // Calculate bearing between two nodes
-    double CalculateBearing(const std::shared_ptr<CStreetMap::SNode>& src, const std::shared_ptr<CStreetMap::SNode>& dest) const {
-        return SGeographicUtils::CalculateBearing(src->Location(), dest->Location());
-    }
-
-    // Get direction string from bearing
-    std::string GetDirectionString(double angle) const {
-        return SGeographicUtils::BearingToDirection(angle);
-    }
-
-    // Get street name between two nodes
-    std::string GetStreetName(const std::shared_ptr<CStreetMap::SNode>& node1, const std::shared_ptr<CStreetMap::SNode>& node2) const {
-        auto StreetMap = Config->StreetMap();
-        for (size_t i = 0; i < StreetMap->WayCount(); ++i) {
-            auto way = StreetMap->WayByIndex(i);
+    // Helper methods for locating ways and getting names
+    std::shared_ptr<CStreetMap::SWay> findWayBetweenNodes(TNodeID node1, TNodeID node2) const {
+        for (size_t i = 0; i < streetMap->WayCount(); ++i) {
+            auto way = streetMap->WayByIndex(i);
+            if (!way) continue;
+            
             for (size_t j = 0; j < way->NodeCount() - 1; ++j) {
-                if ((way->GetNodeID(j) == node1->ID() && way->GetNodeID(j + 1) == node2->ID()) ||
-                    (way->GetNodeID(j) == node2->ID() && way->GetNodeID(j + 1) == node1->ID())) {
-                    return way->HasAttribute("name") ? way->GetAttribute("name") : "unnamed street";
+                if ((way->GetNodeID(j) == node1 && way->GetNodeID(j+1) == node2) ||
+                    (!IsOneWay(way) && way->GetNodeID(j) == node2 && way->GetNodeID(j+1) == node1)) {
+                    return way;
                 }
             }
         }
-        return "unnamed street";
+        return nullptr;
+    }
+
+    std::string getWayName(const std::shared_ptr<CStreetMap::SWay>& way) const {
+        try {
+            return std::any_cast<std::string>(way->GetAttribute("name"));
+        } catch (...) {
+            return "unnamed road";
+        }
+    }
+
+    TVertexID AddVertex(std::any tag){
+        TVertexID id = nextVertexID++; 
+        vertices[id] = tag; 
+        adjList[id] = {}; 
+        return id; 
+    }
+
+    void BuildGraph(){
+        for (size_t i = 0; i < streetMap->WayCount(); ++i){
+            auto way = streetMap->WayByIndex(i);
+            if (!way || !IsWayTraversable(way)){
+                continue; 
+            } 
+
+            for (size_t j = 0; j < way->NodeCount() - 1; ++j){
+                TNodeID node1ID = way->GetNodeID(j); 
+                TNodeID node2ID = way->GetNodeID(j+1);
+
+                if (nodeToVertex.find(node1ID) == nodeToVertex.end() || 
+                    nodeToVertex.find(node2ID) == nodeToVertex.end()){
+                    continue; 
+                } 
+
+                TVertexID v1 = nodeToVertex[node1ID]; 
+                TVertexID v2 = nodeToVertex[node2ID]; 
+
+                auto node1 = GetNodeByID(node1ID); 
+                auto node2 = GetNodeByID(node2ID); 
+
+                if (!node1 || !node2){
+                    continue; 
+                }
+
+                double distance = CalculateDistance(node1, node2); 
+
+                bool oneWay = IsOneWay(way); 
+                AddEdge(v1, v2, distance); 
+                if (!oneWay){
+                    AddEdge(v2, v1, distance); 
+                }
+            }
+        }
+    }
+
+    void AddEdge(TVertexID from, TVertexID to, double weight){
+        adjList[from].push_back({to, weight}); 
+    }
+
+    bool IsWayTraversable(const std::shared_ptr<CStreetMap::SWay>& way) const {
+        if (!way) {
+            return false; 
+        } 
+        try {
+            std::string highway = std::any_cast<std::string>(way->GetAttribute("highway")); 
+            return true; 
+        } catch (...){
+            return false; 
+        }
+    }
+
+    bool IsOneWay(const std::shared_ptr<CStreetMap::SWay>& way) const {
+        try {
+            std::string oneway = std::any_cast<std::string>(way->GetAttribute("oneway")); 
+            return oneway == "yes" || oneway == "true" || oneway == "1"; 
+        } catch (...){
+            return false; 
+        }
+    }
+
+    std::string GetWayName(const std::shared_ptr<CStreetMap::SWay>& way) const {
+        try {
+            return std::any_cast<std::string>(way->GetAttribute("name"));
+        } catch (...) {
+            return "unnamed road";
+        }
+    }
+
+    std::shared_ptr<CStreetMap::SNode> GetNodeByID(TNodeID id) const {
+        for (const auto& node : sortedNodes) {
+            if (node->ID() == id) {
+                return node;
+            }
+        }
+        return nullptr;
+    }
+
+    double CalculateDistance(const std::shared_ptr<CStreetMap::SNode>& node1, 
+                             const std::shared_ptr<CStreetMap::SNode>& node2) const {
+        // Use GeographicUtils for Haversine distance
+        if (!node1 || !node2){
+            return NoPath; 
+        }
+
+        double DistanceInMiles = SGeographicUtils::HaversineDistanceInMiles(
+            node1->Location(), 
+            node2->Location() 
+        ); 
+        // Convert miles to meters (1 mile = 1609.344 meters)
+        const double MetersPerMile = 1609.344;
+        return std::max(0.0, DistanceInMiles * MetersPerMile); 
+    }
+
+    std::size_t NodeCount() const noexcept {
+        return sortedNodes.size();
+    }
+    
+    std::shared_ptr<CStreetMap::SNode> SortedNodeByIndex(std::size_t index) const noexcept {
+       if (index < sortedNodes.size()){
+        return sortedNodes[index]; 
+       }
+       return nullptr; 
+    }
+    
+    // Formatting helpers
+    std::string FormatLocation(const std::shared_ptr<CStreetMap::SNode>& node) const {
+        auto [lat, lon] = node->Location();
+        
+        // Latitude conversion
+        int latDeg = std::abs(static_cast<int>(lat));
+        double latMinFull = (std::abs(lat) - latDeg) * 60.0;
+        int latMin = static_cast<int>(latMinFull);
+        int latSec = std::round((latMinFull - latMin) * 60.0);
+        
+        // Longitude conversion
+        int lonDeg = std::abs(static_cast<int>(lon));
+        double lonMinFull = (std::abs(lon) - lonDeg) * 60.0;
+        int lonMin = static_cast<int>(lonMinFull);
+        int lonSec = std::round((lonMinFull - lonMin) * 60.0);
+
+        std::stringstream ss;
+        ss << latDeg << "d " << latMin << "' " << latSec << "\" " 
+           << (lat >= 0 ? "N" : "S") << ", "
+           << lonDeg << "d " << lonMin << "' " << lonSec << "\" " 
+           << (lon >= 0 ? "E" : "W");
+        
+        return ss.str();
+    }
+
+    double FindShortestPath(TNodeID src, TNodeID dest, std::vector<TNodeID>& path) {
+        path.clear();
+        
+        // Special case: if src and dest are the same
+        if (src == dest) {
+            path.push_back(src);
+            return 0.0;
+        }
+        
+        // Check if src and dest nodes exist in our mapping
+        if (nodeToVertex.find(src) == nodeToVertex.end() || 
+            nodeToVertex.find(dest) == nodeToVertex.end()) {
+            return CPathRouter::NoPathExists;  // Use the correct constant
+        }
+        
+        // Get vertex IDs for source and destination
+        TVertexID srcVertex = nodeToVertex[src];
+        TVertexID destVertex = nodeToVertex[dest];
+        
+        // Priority queue for Dijkstra's algorithm
+        using QueueElement = std::pair<double, TVertexID>; // (distance, vertex)
+        std::priority_queue<QueueElement, std::vector<QueueElement>, std::greater<QueueElement>> pq;
+        
+        // Initialize distances and previous vertex map
+        std::unordered_map<TVertexID, double> distances;
+        std::unordered_map<TVertexID, TVertexID> previous;
+        
+        // Set initial distances to infinity
+        for (const auto& [vertex, _] : vertices) {
+            distances[vertex] = CPathRouter::NoPathExists;  // Use the correct constant
+        }
+        distances[srcVertex] = 0.0;
+        
+        // Start from source
+        pq.push({0.0, srcVertex});
+        
+        // Main Dijkstra loop
+        while (!pq.empty()) {
+            auto [currentDist, currentVertex] = pq.top();
+            pq.pop();
+            
+            // If we reached the destination, we're done
+            if (currentVertex == destVertex) {
+                break;
+            }
+            
+            // Skip if we already found a better path
+            if (currentDist > distances[currentVertex]) {
+                continue;
+            }
+            
+            // Process all neighbors
+            for (const auto& [neighbor, weight] : adjList[currentVertex]) {
+                double newDist = currentDist + weight;
+                
+                // If we found a better path, update
+                if (newDist < distances[neighbor]) {
+                    distances[neighbor] = newDist;
+                    previous[neighbor] = currentVertex;
+                    pq.push({newDist, neighbor});
+                }
+            }
+        }
+        
+        // Check if we found a path - update this condition
+        if (distances[destVertex] == CPathRouter::NoPathExists || previous.find(destVertex) == previous.end()) {
+            return CPathRouter::NoPathExists;  // Use the correct constant
+        }
+        
+        // Reconstruct the path
+        std::vector<TVertexID> vertexPath;
+        for (TVertexID at = destVertex; at != srcVertex; at = previous[at]) {
+            vertexPath.push_back(at);
+        }
+        vertexPath.push_back(srcVertex);
+        
+        // Reverse to get source-to-destination order
+        std::reverse(vertexPath.begin(), vertexPath.end());
+        
+        // Convert vertex IDs to node IDs
+        for (TVertexID vertex : vertexPath) {
+            path.push_back(vertexToNode[vertex]);
+        }
+        
+        return distances[destVertex];
+    }
+    double FindFastestPath(TNodeID src, TNodeID dest, std::vector<TTripStep>& path) {
+        path.clear();
+        // Special case: if src and dest are the same
+        if (src == dest) {
+            path.push_back({ETransportationMode::Walk, src});
+            return 0.0;
+        }
+
+        // Check if src and dest nodes exist in our mapping
+        if (nodeToVertex.find(src) == nodeToVertex.end() || 
+            nodeToVertex.find(dest) == nodeToVertex.end()){
+            return NoPath; 
+        } 
+
+        // Get the nodes path first
+        std::vector<TNodeID> nodePath;
+        double totalDistance = FindShortestPath(src, dest, nodePath);
+        
+        if (totalDistance == NoPath || nodePath.empty()) {
+            return NoPath;
+        }
+
+        // Calculate total time based on transportation modes
+        double totalTime = 0.0;
+        
+        // Path generation
+        ETransportationMode currentMode = ETransportationMode::Walk;
+        path.push_back({currentMode, nodePath[0]});
+
+        for (size_t i = 1; i < nodePath.size(); ++i) {
+            auto prevNode = GetNodeByID(nodePath[i-1]);
+            auto currNode = GetNodeByID(nodePath[i]);
+            
+            if (!prevNode || !currNode) continue;
+
+            double distanceMeters = CalculateDistance(prevNode, currNode);
+            double distanceMiles = distanceMeters / 1609.344;
+            
+            // Calculate time for each mode
+            double walkTime = distanceMiles / configuration->WalkSpeed();
+            double bikeTime = distanceMiles / configuration->BikeSpeed();
+            
+            // Select fastest mode
+            ETransportationMode bestMode = (bikeTime < walkTime) 
+                ? ETransportationMode::Bike 
+                : ETransportationMode::Walk;
+                
+            double segmentTime = (bestMode == ETransportationMode::Bike) ? bikeTime : walkTime;
+            totalTime += segmentTime;
+
+            // Add to path with best mode
+            if (bestMode == currentMode) {
+                // Update the last step with new destination
+                path.back().second = nodePath[i];
+            } else {
+                // Add new step with new mode
+                path.push_back({bestMode, nodePath[i]});
+                currentMode = bestMode;
+            }
+        }
+
+        return totalTime;
+    }
+
+    bool GetPathDescription(const std::vector<TTripStep>& path, std::vector<std::string>& desc) const {
+        desc.clear();
+        if (path.empty()) return false;
+
+        // Special case for single-node path
+        if (path.size() == 1) {
+            auto node = GetNodeByID(path[0].second);
+            if (!node) return false;
+            
+            std::stringstream ss;
+            ss << "Start and end at " << FormatLocation(node);
+            desc.push_back(ss.str());
+            return true;
+        }
+
+        // Start location
+        auto startNode = GetNodeByID(path[0].second);
+        if (!startNode) return false;
+        desc.push_back("Start at " + FormatLocation(startNode));
+
+        // Track last node in current mode segment
+        TNodeID lastNodeID = path[0].second;
+        
+        // Process path steps
+        for (size_t i = 0; i < path.size(); ++i) {
+            auto currentNode = GetNodeByID(path[i].second);
+            if (!currentNode) continue;
+            
+            // Skip the first node (already handled as start)
+            if (i == 0) continue;
+            
+            auto prevNode = GetNodeByID(lastNodeID);
+            lastNodeID = path[i].second;
+            
+            if (!prevNode) continue;
+            
+            double distance = CalculateDistance(prevNode, currentNode) / 1609.344; // Convert to miles
+
+            std::stringstream ss;
+            // Mode-specific description
+            switch (path[i].first) {
+                case ETransportationMode::Walk:
+                    ss << "Walk ";
+                    break;
+                case ETransportationMode::Bike:
+                    ss << "Bike ";
+                    break;
+                case ETransportationMode::Bus:
+                    ss << "Take bus ";
+                    break;
+            }
+
+            // Get direction and street name
+            double bearing = SGeographicUtils::CalculateBearing(
+                prevNode->Location(), 
+                currentNode->Location()
+            );
+            std::string directionStr = SGeographicUtils::BearingToDirection(bearing);
+            
+            // Find way between nodes
+            auto way = findWayBetweenNodes(
+                prevNode->ID(), 
+                currentNode->ID()
+            );
+            std::string streetName = way ? getWayName(way) : "unnamed road";
+
+            ss << directionStr;
+            if (streetName != "unnamed road") {
+                ss << " along " << streetName;
+            }
+            ss << " for " << std::fixed << std::setprecision(1) << distance << " mi";
+            
+            desc.push_back(ss.str());
+        }
+
+        // End location
+        auto endNode = GetNodeByID(path.back().second);
+        if (!endNode) return false;
+        desc.push_back("End at " + FormatLocation(endNode));
+
+        return true;
     }
 };
 
-// Constructor for the transportation planner
-CDijkstraTransportationPlanner::CDijkstraTransportationPlanner(std::shared_ptr<SConfiguration> config)
-    : DImplementation(std::make_unique<SImplementation>(config)) {}
+CDijkstraTransportationPlanner::CDijkstraTransportationPlanner(std::shared_ptr<SConfiguration> config) {
+    DImplementation = std::make_unique<SImplementation>(config);
+}
 
-// Destructor
 CDijkstraTransportationPlanner::~CDijkstraTransportationPlanner() = default;
 
-// Get the number of nodes
-size_t CDijkstraTransportationPlanner::NodeCount() const noexcept {
-    return DImplementation->SortedNodes.size();
+std::size_t CDijkstraTransportationPlanner::NodeCount() const noexcept {
+    return DImplementation->sortedNodes.size();
 }
 
-// Get a sorted node by index
-std::shared_ptr<CStreetMap::SNode> CDijkstraTransportationPlanner::SortedNodeByIndex(size_t index) const noexcept {
-    return index < DImplementation->SortedNodes.size() ? DImplementation->SortedNodes[index] : nullptr;
+std::shared_ptr<CStreetMap::SNode> CDijkstraTransportationPlanner::SortedNodeByIndex(std::size_t index) const noexcept {
+    return (index < DImplementation->sortedNodes.size()) 
+        ? DImplementation->sortedNodes[index] 
+        : nullptr;
 }
 
-// Find the shortest path
-double CDijkstraTransportationPlanner::FindShortestPath(CStreetMap::TNodeID src, CStreetMap::TNodeID dest, std::vector<CStreetMap::TNodeID>& path) {
-    path.clear();
-    if (DImplementation->NodeIDToDistanceVertexID.find(src) == DImplementation->NodeIDToDistanceVertexID.end() ||
-        DImplementation->NodeIDToDistanceVertexID.find(dest) == DImplementation->NodeIDToDistanceVertexID.end()) {
-        return CPathRouter::NoPathExists;
-    }
-
-    auto srcVertex = DImplementation->NodeIDToDistanceVertexID[src];
-    auto destVertex = DImplementation->NodeIDToDistanceVertexID[dest];
-    std::vector<CPathRouter::TVertexID> routerPath;
-    double distance = DImplementation->DistanceRouter->FindShortestPath(srcVertex, destVertex, routerPath);
-
-    if (distance < 0.0) return CPathRouter::NoPathExists;
-
-    for (const auto& vertex : routerPath) {
-        path.push_back(DImplementation->DistanceVertexIDToNodeID[vertex]);
-    }
-    return distance;
+double CDijkstraTransportationPlanner::FindShortestPath(TNodeID src, TNodeID dest, std::vector<TNodeID> &path) {
+    return DImplementation->FindShortestPath(src, dest, path);
 }
 
-// Find the fastest path
-double CDijkstraTransportationPlanner::FindFastestPath(CStreetMap::TNodeID src, CStreetMap::TNodeID dest, std::vector<TTripStep>& path) {
-    path.clear();
-    if (src == dest) {
-        path.push_back({ETransportationMode::Walk, src});
-        return 0.0;
-    }
-
-    if (DImplementation->NodeIDToTimeVertexID.find(src) == DImplementation->NodeIDToTimeVertexID.end() ||
-        DImplementation->NodeIDToTimeVertexID.find(dest) == DImplementation->NodeIDToTimeVertexID.end()) {
-        return CPathRouter::NoPathExists;
-    }
-
-    auto srcVertex = DImplementation->NodeIDToTimeVertexID[src];
-    auto destVertex = DImplementation->NodeIDToTimeVertexID[dest];
-    std::vector<CPathRouter::TVertexID> routerPath;
-    double time = DImplementation->TimeRouter->FindShortestPath(srcVertex, destVertex, routerPath);
-
-    if (time < 0.0 || routerPath.empty()) return CPathRouter::NoPathExists;
-
-    std::vector<CStreetMap::TNodeID> nodePath;
-    for (const auto& vertex : routerPath) {
-        nodePath.push_back(DImplementation->TimeVertexIDToNodeID[vertex]);
-    }
-
-    path.clear();
-    ETransportationMode prevMode = ETransportationMode::Walk;
-    std::string currentBusRoute = "";
-    path.push_back({prevMode, nodePath[0]});
-
-    for (size_t i = 1; i < nodePath.size(); ++i) {
-        auto prevNode = DImplementation->Config->StreetMap()->NodeByID(nodePath[i - 1]);
-        auto currNode = DImplementation->Config->StreetMap()->NodeByID(nodePath[i]);
-        if (!prevNode || !currNode) continue;
-
-        double distance = SGeographicUtils::HaversineDistanceInMiles(prevNode->Location(), currNode->Location());
-        double walkTime = distance / DImplementation->Config->WalkSpeed();
-        double bikeTime = distance / DImplementation->Config->BikeSpeed();
-
-        std::string busRoute = DImplementation->FindBusRouteBetweenNodes(nodePath[i - 1], nodePath[i]);
-        double busTime = std::numeric_limits<double>::max();
-        if (!busRoute.empty()) {
-            busTime = distance / DImplementation->Config->DefaultSpeedLimit() + 
-                     (DImplementation->Config->BusStopTime() / 3600.0);
-        }
-
-        ETransportationMode mode;
-        if (!busRoute.empty() && (busTime < walkTime && busTime < bikeTime)) {
-            mode = ETransportationMode::Bus;
-            currentBusRoute = busRoute;
-        } else if (bikeTime < walkTime) {
-            mode = ETransportationMode::Bike;
-            currentBusRoute = "";
-        } else {
-            mode = ETransportationMode::Walk;
-            currentBusRoute = "";
-        }
-
-        if (mode == prevMode && (mode != ETransportationMode::Bus || !currentBusRoute.empty())) {
-            path.back().second = nodePath[i];
-        } else {
-            path.push_back({mode, nodePath[i]});
-        }
-
-        prevMode = mode;
-    }
-
-    return time;
+double CDijkstraTransportationPlanner::FindFastestPath(TNodeID src, TNodeID dest, std::vector<TTripStep> &path) {
+    return DImplementation->FindFastestPath(src, dest, path);
 }
 
-// Get a description of the path
-bool CDijkstraTransportationPlanner::GetPathDescription(const std::vector<TTripStep>& path, std::vector<std::string>& desc) const {
-    desc.clear();
-    if (path.empty()) return false;
-
-    auto StreetMap = DImplementation->Config->StreetMap();
-    auto startNode = StreetMap->NodeByID(path[0].second);
-    if (!startNode) return false;
-
-    desc.push_back("Start at " + DImplementation->FormatLocation(startNode));
-
-    size_t i = 0;
-    while (i < path.size() - 1) {
-        auto currentMode = path[i].first;
-        auto currentNodeID = path[i].second;
-        auto currentNode = StreetMap->NodeByID(currentNodeID);
-        if (!currentNode) return false;
-
-        if (currentMode == ETransportationMode::Bus) {
-            size_t busEndIndex = i;
-            while (busEndIndex + 1 < path.size() && path[busEndIndex + 1].first == ETransportationMode::Bus) {
-                busEndIndex++;
-            }
-
-            auto destNodeID = path[busEndIndex].second;
-            auto destNode = StreetMap->NodeByID(destNodeID);
-            if (!destNode) return false;
-
-            auto srcStopID = DImplementation->NodeIDToStopID.at(currentNodeID);
-            auto destStopID = DImplementation->NodeIDToStopID.at(destNodeID);
-            std::string busRoute = "A"; // Default for test cases
-            std::stringstream ss;
-            ss << "Take Bus " << busRoute << " from stop " << srcStopID << " to stop " << destStopID;
-            desc.push_back(ss.str());
-
-            i = busEndIndex + 1;
-        } else {
-            auto startNodeID = currentNodeID;
-            auto startNode = currentNode;
-            size_t nextIndex = i + 1;
-            if (nextIndex >= path.size()) break;
-
-            auto endNodeID = path[nextIndex].second;
-            auto endNode = StreetMap->NodeByID(endNodeID);
-            if (!endNode) return false;
-
-            double totalDistance = SGeographicUtils::HaversineDistanceInMiles(startNode->Location(), endNode->Location());
-            std::string directionStr = DImplementation->GetDirectionString(DImplementation->CalculateBearing(startNode, endNode));
-            std::string streetName = DImplementation->GetStreetName(startNode, endNode);
-
-            std::stringstream ss;
-            ss << (currentMode == ETransportationMode::Walk ? "Walk " : "Bike ") << directionStr;
-            if (streetName != "unnamed street") ss << " along " << streetName;
-            ss << " for " << std::fixed << std::setprecision(1) << totalDistance << " mi";
-            desc.push_back(ss.str());
-
-            i = nextIndex;
-        }
-    }
-
-    auto endNode = StreetMap->NodeByID(path.back().second);
-    if (!endNode) return false;
-
-    desc.push_back("End at " + DImplementation->FormatLocation(endNode));
-    return true;
+bool CDijkstraTransportationPlanner::GetPathDescription(const std::vector<TTripStep> &path, std::vector<std::string> &desc) const {
+    return DImplementation->GetPathDescription(path, desc);
 }
