@@ -1,6 +1,6 @@
 # Compiler and flags
 CXX = g++
-CXXFLAGS = -std=c++17 -Wall -Wno - sign -compare -Iinclude
+CXXFLAGS = -std=c++17 -Wall -Wno-sign-compare -Iinclude
 LDFLAGS = -lgtest -lgtest_main -pthread -lexpat
 
 # Directories
