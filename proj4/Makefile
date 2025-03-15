@@ -1,51 +1,42 @@
-# Compiler and flags
-CXX = g++
-CXXFLAGS = -std=c++17 -Wall -Wno-sign-compare -Iinclude
-LDFLAGS = -lgtest -lgtest_main -pthread -lexpat
-
 # Directories
+BIN_DIR = bin
+OBJ_DIR = obj
 SRC_DIR = src
 TEST_DIR = testsrc
-OBJ_DIR = obj
-BIN_DIR = bin
+INCLUDE_DIR = include
+TARGET = $(BIN_DIR)/teststrutils
+
+# Google Test flags
+GTEST_FLAGS = -I/opt/homebrew/opt/googletest/include -L/opt/homebrew/opt/googletest/lib -lgtest -lgtest_main -pthread
 
 # Source files
-SRC_FILES = $(wildcard $(SRC_DIR)/*.cpp)
-TEST_FILES = $(wildcard $(TEST_DIR)/*.cpp)
+SRC = $(SRC_DIR)/StringUtils.cpp $(TEST_DIR)/StringUtilsTest.cpp
 
-# Object files
-OBJ_FILES = $(patsubst $(SRC_DIR)/%.cpp,$(OBJ_DIR)/%.o,$(SRC_FILES))
-TEST_OBJ_FILES = $(patsubst $(TEST_DIR)/%.cpp,$(OBJ_DIR)/%.o,$(TEST_FILES))
+# Object files (placing them in OBJ_DIR)
+OBJ = $(OBJ_DIR)/StringUtils.o $(OBJ_DIR)/StringUtilsTest.o
 
-# Output binary
-GTEST_TARGET = $(BIN_DIR)/runtests
+all: directories $(TARGET) runtests
 
-# Default target
-all: $(GTEST_TARGET)
+# Compile source files into object files
+$(OBJ_DIR)/StringUtils.o: $(SRC_DIR)/StringUtils.cpp $(INCLUDE_DIR)/StringUtils.h
+	g++ -c -std=c++17 -I $(INCLUDE_DIR) -o $@ $<
 
-# Rule to build the Google Test binary
-$(GTEST_TARGET): $(OBJ_FILES) $(TEST_OBJ_FILES)
-	@mkdir -p $(BIN_DIR)
-	$(CXX) $(CXXFLAGS) $^ -o $@ $(LDFLAGS)
+$(OBJ_DIR)/StringUtilsTest.o: $(TEST_DIR)/StringUtilsTest.cpp $(INCLUDE_DIR)/StringUtils.h
+	g++ -c -std=c++17 -I $(INCLUDE_DIR) -o $@ $< $(GTEST_FLAGS)
 
-# Rule to compile source and test files
-$(OBJ_DIR)/%.o: $(SRC_DIR)/%.cpp | $(OBJ_DIR)
-	$(CXX) $(CXXFLAGS) -c $< -o $@
-
-$(OBJ_DIR)/%.o: $(TEST_DIR)/%.cpp | $(OBJ_DIR)
-	$(CXX) $(CXXFLAGS) -c $< -o $@
-
-# Ensure the object directory exists
-$(OBJ_DIR):
-	@mkdir -p $(OBJ_DIR)
-
-# Clean build artifacts
-clean:
-	rm -rf $(OBJ_DIR) $(BIN_DIR)
+# Link object files into the final executable
+$(TARGET): $(OBJ)
+	g++ $(OBJ) -o $(TARGET) -std=c++17 $(GTEST_FLAGS)
 
 # Run tests
-test: all
-	./$(GTEST_TARGET)
+runtests: $(TARGET)
+	$(TARGET)
 
-# Phony targets
-.PHONY: all clean test
+# Create necessary directories
+directories:
+	mkdir -p $(BIN_DIR)
+	mkdir -p $(OBJ_DIR)
+
+# Clean up object files and binaries
+clean:
+	rm -rf $(BIN_DIR) $(OBJ_DIR)
