@@ -1,0 +1,1 @@
+The CDijkstraTransportationPlanner class is a routing system that calculates the shortest or fastest path between two locations using Dijkstra’s algorithm. It supports multiple transportation modes (walking, biking, bus) and generates step-by-step navigation instructions.
