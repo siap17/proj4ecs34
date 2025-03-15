@@ -220,7 +220,7 @@ struct CDijkstraTransportationPlanner::SImplementation {
         return ss.str();
     }
 
-    double FindShortestPath(TNodeID src, TNodeID dest, std::vector<TNodeID>& path) {
+    double CDijkstraTransportationPlanner::FindShortestPath(TNodeID src, TNodeID dest, std::vector<TNodeID>& path) {
         path.clear();
         // Special case: if src and dest are the same
         if (src == dest) {
@@ -309,7 +309,7 @@ struct CDijkstraTransportationPlanner::SImplementation {
         return distances[destVertex];
     }
 
-    double FindFastestPath(TNodeID src, TNodeID dest, std::vector<TTripStep>& path) {
+    double CDijkstraTransporationPlanner::FindFastestPath(TNodeID src, TNodeID dest, std::vector<TTripStep>& path) {
         path.clear();
         // Special case: if src and dest are the same
         if (src == dest) {
